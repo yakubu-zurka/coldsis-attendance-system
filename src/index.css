@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-slideIn {
+  animation: slideIn 0.35s ease-out;
+}
+
+.input {
+  @apply w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500;
+}
