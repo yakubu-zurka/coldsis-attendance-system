@@ -96,30 +96,30 @@ export function AttendanceRecords() {
   if (loading && records.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 space-y-4">
-        <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
-        <p className="text-gray-500 font-medium">Loading attendance logs...</p>
+        <Loader2 className="w-10 h-10 animate-spin text-orange-500" />
+        <p className="text-gray-500 dark:text-slate-400 font-medium">Loading attendance logs...</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-md p-6 mt-14">
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-md dark:shadow-slate-900/40 p-6 mt-14">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-gray-800">Attendance History</h2>
-            <p className="text-sm text-gray-500">Track daily check-ins and work durations</p>
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Attendance History</h2>
+            <p className="text-sm text-gray-500 dark:text-slate-400">Track daily check-ins and work durations</p>
           </div>
           <button 
             onClick={() => exportToPDF(filteredRecords)} 
-            className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition font-semibold text-sm border border-blue-100"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-slate-700 text-blue-700 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-slate-600 transition font-semibold text-sm border border-blue-100 dark:border-slate-600"
           >
             <Download size={18}/> PDF Report
           </button>
         </div>
 
         {/* Filters */}
-        <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-3 p-4 bg-gray-50 rounded-xl border border-gray-100">
+        <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-3 p-4 bg-gray-50 dark:bg-slate-700/50 rounded-xl border border-gray-100 dark:border-slate-600">
           <div className="relative">
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
             <input
@@ -127,30 +127,30 @@ export function AttendanceRecords() {
               placeholder="Search staff..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-800 dark:text-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 outline-none"
             />
           </div>
           <div className="relative">
             <Calendar className="absolute left-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full pl-9 py-2 border border-gray-300 rounded-lg text-sm" />
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full pl-9 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-800 dark:text-slate-200 rounded-lg text-sm" />
           </div>
           <div className="relative">
             <Calendar className="absolute left-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full pl-9 py-2 border border-gray-300 rounded-lg text-sm" />
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full pl-9 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-800 dark:text-slate-200 rounded-lg text-sm" />
           </div>
           <button 
             onClick={() => {setSearch(''); setDateFrom(''); setDateTo('');}} 
-            className="bg-gray-200 text-gray-700 rounded-lg text-sm font-bold hover:bg-gray-300 transition h-10"
+            className="bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-slate-200 rounded-lg text-sm font-bold hover:bg-gray-300 dark:hover:bg-slate-500 transition h-10"
           >
             Clear All
           </button>
         </div>
 
         {/* Records Table */}
-        <div className="overflow-x-auto border border-gray-100 rounded-lg">
+        <div className="overflow-x-auto border border-gray-100 dark:border-slate-700 rounded-lg">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-gray-200 bg-gray-50 text-gray-600 uppercase text-xs tracking-wider">
+              <tr className="border-b-2 border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/60 text-gray-600 dark:text-slate-300 uppercase text-xs tracking-wider">
                 <th className="text-left py-4 px-4 font-bold">Staff Member</th>
                 <th className="text-left py-4 px-4 font-bold">Date</th>
                 <th className="text-left py-4 px-4 font-bold">Check In</th>
@@ -159,7 +159,7 @@ export function AttendanceRecords() {
                 <th className="text-center py-4 px-4 font-bold">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
               {filteredRecords.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-12 text-center">
@@ -171,16 +171,16 @@ export function AttendanceRecords() {
                 </tr>
               ) : (
                 filteredRecords.map((record) => (
-                  <tr key={record.id} className="hover:bg-blue-50/40 transition-colors group">
+                  <tr key={record.id} className="hover:bg-orange-50/30 dark:hover:bg-slate-700/40 transition-colors group">
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
+                        <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600">
                           <User size={16} />
                         </div>
-                        <span className="font-semibold text-gray-800">{record.staffName}</span>
+                        <span className="font-semibold text-gray-800 dark:text-slate-200">{record.staffName}</span>
                       </div>
                     </td>
-                    <td className="py-4 px-4 text-gray-600 font-medium">{record.date}</td>
+                    <td className="py-4 px-4 text-gray-600 dark:text-slate-400 font-medium">{record.date}</td>
                     <td className="py-4 px-4">
                       <div className="text-green-600 font-bold">{record.checkInTime || "--:--"}</div>
                       {record.latitude && (
@@ -191,11 +191,11 @@ export function AttendanceRecords() {
                     </td>
                     <td className="py-4 px-4">
                       {record.checkOutTime === "Auto-Closed" ? (
-                        <div className="text-orange-500 font-bold flex items-center gap-1 bg-orange-50 w-fit px-2 py-1 rounded">
+                        <div className="text-orange-500 font-bold flex items-center gap-1 bg-orange-50 dark:bg-orange-900/20 w-fit px-2 py-1 rounded">
                           <AlertTriangle size={12} /> Auto-Closed
                         </div>
                       ) : (
-                        <div className={record.checkOutTime ? "text-red-600 font-bold" : "text-gray-400 italic"}>
+                        <div className={record.checkOutTime ? "text-red-600 font-bold" : "text-gray-400 dark:text-slate-500 italic"}>
                           {record.checkOutTime || "Not Recorded"}
                         </div>
                       )}
@@ -203,7 +203,7 @@ export function AttendanceRecords() {
                     <td className="py-4 px-4">
                       {record.checkOutTime ? (
                         <div className="flex flex-col">
-                           <span className="text-gray-900 font-bold">{calculateDuration(record.checkInTimestamp, record.checkOutTimestamp)}</span>
+                           <span className="text-gray-900 dark:text-slate-200 font-bold">{calculateDuration(record.checkInTimestamp, record.checkOutTimestamp)}</span>
                            <span className={`text-[10px] font-bold uppercase ${record.checkOutTime === "Auto-Closed" ? "text-orange-500" : "text-green-500"}`}>
                              {record.checkOutTime === "Auto-Closed" ? "System Auto" : "Completed"}
                            </span>
@@ -218,7 +218,7 @@ export function AttendanceRecords() {
                     <td className="py-4 px-4 text-center">
                       <button 
                         onClick={() => handleDeleteRecord(record.id)} 
-                        className="p-2 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-full transition-all"
+                        className="p-2 text-gray-300 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-all"
                       >
                         <Trash2 size={16} />
                       </button>

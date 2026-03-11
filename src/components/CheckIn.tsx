@@ -21,7 +21,6 @@ export function CheckIn() {
   const { getLocation, error: geoError } = useGeolocation();
   const { getDateTime } = useDeviceDateTime();
   const { data: staffData } = useFirebaseRead<Record<string, StaffMember>>("staff");
-  const { data: attendanceData } = useFirebaseRead<Record<string, any>>("attendance");
 
   // --- OFFICE CONFIGURATION ---
   const OFFICE_LAT = 5.697796;
@@ -30,6 +29,13 @@ export function CheckIn() {
 
   const [search, setSearch] = useState("");
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
+  
+  // Target only the selected user's record for today
+  const { date: currentDate } = getDateTime();
+  const targetedPath = selectedStaff ? `attendance/${selectedStaff.id}_${currentDate}` : null;
+  // Passing null or empty to useFirebaseRead should be handled safely by the hook
+  const { data: todaysRecord } = useFirebaseRead<any>(targetedPath || "___NOT_FOUND___");
+
   const [pin, setPin] = useState("");
   const [showPin, setShowPin] = useState(false);
   const [state, setState] = useState<CheckInState>("idle");
@@ -128,54 +134,18 @@ export function CheckIn() {
     };
   }, []);
 
-  // Monitor the global attendance table to see if the selected staff is already checked in today
+  // Manage internal check-in state based on targeted record
   useEffect(() => {
-    if (!selectedStaff || !attendanceData) {
-      setIsCheckedIn(false);
-      setSessionDate(null);
-      return;
-    }
-
-    const { date: currentDate } = getDateTime();
-    
-    // We check if there's a record for this exact staff member today
-    // The key format is `${selectedStaff.id}_${date}`
-    const recordId = `${selectedStaff.id}_${currentDate}`;
-    const todaysRecord = attendanceData[recordId];
-
-    if (todaysRecord) {
-      // If there is a record today, check its status or if it lacks a checkout time
+    if (selectedStaff && todaysRecord) {
       if (todaysRecord.status === "active" || !todaysRecord.checkOutTime) {
         setIsCheckedIn(true);
         setSessionDate(currentDate);
-        return; // The user is actively checked in
+        return;
       }
     }
-
-    // Alternatively, if they checked in over midnight (long shift), we could loop through all
-    // but typically we can just rely on the most recent record being active.
-    // Let's do a fallback lookup to find any active session across all dates just in case:
-    const activeSession = Object.values(attendanceData).find(
-      (record: any) => record.staffId === selectedStaff.id && record.status === "active" && !record.checkOutTime
-    );
-
-    if (activeSession) {
-      const nineHoursInMs = 9 * 60 * 60 * 1000;
-      const now = Date.now();
-
-      // Ensure the active session wasn't from days ago automatically expired
-      if (now - (activeSession.checkInTimestamp || 0) < nineHoursInMs) {
-         setIsCheckedIn(true);
-         setSessionDate(activeSession.date);
-         return;
-      }
-    }
-
-    // Default: not checked in
     setIsCheckedIn(false);
     setSessionDate(null);
-
-  }, [selectedStaff, attendanceData, getDateTime]);
+  }, [selectedStaff, todaysRecord, currentDate]);
 
   const staffList = staffData
     ? Object.entries(staffData).map(([id, member]) => ({
