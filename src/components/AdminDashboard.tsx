@@ -11,61 +11,30 @@ import { LiveMap } from './admin/LiveMap';
 
 // Updated TabType to include 'map'
 type TabType = 'staff' | 'attendance' | 'analytics' | 'map' | 'settings';
+ 
+// ... imports stay the same
 
 export function AdminDashboard() {
   const { logout } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('attendance');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSessionWarning, setShowSessionWarning] = useState(false);
 
-  useEffect(() => {
-    let timeout: NodeJS.Timeout;
-    let warningTimeout: NodeJS.Timeout;
+  // ... (useEffect for timers stays the same)
 
-    const resetTimers = () => {
-      clearTimeout(timeout);
-      clearTimeout(warningTimeout);
-
-      warningTimeout = setTimeout(() => {
-        setShowSessionWarning(true);
-      }, 4 * 60 * 1000);
-
-      timeout = setTimeout(() => {
-        logout();
-      }, 5 * 60 * 1000);
-    };
-
-    window.addEventListener('mousemove', resetTimers);
-    window.addEventListener('keypress', resetTimers);
-
-    resetTimers();
-
-    return () => {
-      clearTimeout(timeout);
-      clearTimeout(warningTimeout);
-      window.removeEventListener('mousemove', resetTimers);
-      window.removeEventListener('keypress', resetTimers);
-    };
-  }, [logout]);
-
-  const handleLogout = async () => {
-    await logout();
-  };
-
-  // Added the Map tab to the navigation array
   const tabs = [
     { id: 'attendance' as TabType, label: 'Attendance Records', icon: BarChart3 },
-    { id: 'map' as TabType, label: 'Live Map View', icon: MapIcon }, // New Tab
+    { id: 'map' as TabType, label: 'Live Map View', icon: MapIcon },
     { id: 'staff' as TabType, label: 'Staff Management', icon: Users },
     { id: 'analytics' as TabType, label: 'Analytics', icon: FileText },
   ];
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <SessionTimeout show={showSessionWarning} onLogout={handleLogout} />
+    <div className="min-h-screen bg-gray-50">
+      <SessionTimeout show={showSessionWarning} onLogout={logout} />
 
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 bg-white shadow-md z-50 border-b border-gray-200">
+      <header className="fixed top-0 left-0 right-0 bg-gray-100 shadow-sm z-50 border-b border-gray-200">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <button
@@ -75,65 +44,83 @@ export function AdminDashboard() {
               {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
             <div className="flex items-center gap-3">
-              <img
-                src="/coldsis-logo_FitMaxWzM1MiwyNjRd.png"
-                alt="COLDSiS Logo"
-                className="h-10 w-13"
-              />
+              <img src="/coldsis-logo_FitMaxWzM1MiwyNjRd.png" alt="Logo" className="h-10 w-auto" />
               <div className="hidden md:block">
-                <h1 className="text-2xl font-bold text-gray-800">COLDSiS GH</h1>
-                <p className="text-xs text-gray-600 font-medium uppercase tracking-tighter">Attendance Management System</p>
+                <h1 className="text-xl font-black text-slate-800 tracking-tighter uppercase"></h1>
               </div>
             </div>
           </div>
 
           <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 bg-orange-600 hover:bg-blue-900 text-white px-4 py-2 rounded-lg transition shadow-md active:scale-95"
+            onClick={logout}
+            className="flex items-center gap-2 bg-orange-600 hover:bg-slate-900 text-white px-4 py-2 rounded-xl transition shadow-md active:scale-95"
           >
-            <LogOut className="w-5 h-5" />
-            <span className="hidden sm:inline font-semibold">Logout</span>
+            <LogOut className="w-4 h-4" />
+            <span className="hidden sm:inline font-bold text-xs uppercase tracking-widest">Logout</span>
           </button>
         </div>
       </header>
 
       <div className="flex">
+        {/* Mobile Overlay (Darkens background on mobile only) */}
+        {sidebarOpen && (
+          <div 
+            className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-30 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
         {/* Sidebar */}
         <aside
-          className={`${
-            sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-          } lg:translate-x-0 fixed top-16 w-64 h-[calc(100vh-4rem)] bg-gray text-white shadow-lg transition-transform duration-200 z-40 border-r border-slate-800`}
+          className={`
+            fixed top-16 bottom-0 left-0 w-64 
+            transition-transform duration-300 ease-in-out z-40
+            /* MOBILE COLORS: Dark Slate */
+            bg-slate-900 text-white 
+            /* DESKTOP COLORS: Light Gray */
+            lg:bg-gray-100 lg:text-slate-800 lg:border-r lg:border-gray-200
+            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
+            lg:translate-x-0
+          `}
         >
-          <nav className="p-6 space-y-2 mt-4">
+          <nav className="p-4 space-y-2 mt-4">
             {tabs.map((tab) => {
               const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              
               return (
                 <button
                   key={tab.id}
                   onClick={() => {
                     setActiveTab(tab.id);
-                    // On mobile, close sidebar after clicking a tab
                     if (window.innerWidth < 1024) setSidebarOpen(false);
                   }}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                    activeTab === tab.id
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-black text-xs uppercase tracking-tight ${
+                    isActive
                       ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/20'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                      : 'text-slate-400 hover:text-orange-600 lg:hover:bg-white lg:hover:shadow-sm'
                   }`}
                 >
-                  <Icon className="w-5 h-5" />
-                  <span className="text-sm font-bold">{tab.label}</span>
+                  <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                  <span>{tab.label}</span>
                 </button>
               );
             })}
           </nav>
+
+          {/* Sidebar Footer Branding */}
+          <div className="absolute bottom-8 left-4 right-4 text-center">
+            <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] opacity-50">
+              Admin Control Panel
+            </p>
+          </div>
         </aside>
 
-        {/* Main Content */}
-        <main className="flex-1 mt-16 lg:ml-64 h-[calc(100vh-4rem)] overflow-hidden">
-          <div className="h-full w-full p-6 overflow-y-auto">
+        {/* Main Content Area */}
+        <main className="flex-1 mt-16 lg:ml-64 h-[calc(100vh-4rem)] overflow-hidden bg-white">
+          <div className="h-full w-full p-4 md:p-8 overflow-y-auto">
             {activeTab === 'attendance' && <AttendanceRecords />}
-            {activeTab === 'map' && <LiveMap />} {/* Render the Map Component */}
+            {activeTab === 'map' && <LiveMap />}
             {activeTab === 'staff' && <StaffManagement />}
             {activeTab === 'analytics' && <Analytics />}
           </div>

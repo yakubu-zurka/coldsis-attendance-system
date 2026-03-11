@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
+import toast from 'react-hot-toast';
 import { useFirebaseRead, firebaseDelete } from '../../hooks/useFirebaseSync';
-import { Trash2, Search, MapPin, Download, Loader2, Calendar, User } from 'lucide-react';
+import { Trash2, Search, MapPin, Download, Loader2, Calendar, User, AlertTriangle } from 'lucide-react';
 import { exportToPDF } from '../../utils/export';
 
 export function AttendanceRecords() {
@@ -38,20 +39,58 @@ export function AttendanceRecords() {
   const calculateDuration = (inTime?: number, outTime?: number) => {
     if (!inTime || !outTime) return null;
     const diff = outTime - inTime;
+    
+    // If the diff is wildly huge or negative, it might be an auto-close fallback
     if (diff < 0) return "0h 0m";
 
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+    // Cap displayed duration at 14h if it was auto-closed at the 14h mark
+    if (hours >= 14) return "14h 0m (Max)";
+    
     return `${hours}h ${minutes}m`;
   };
 
   const handleDeleteRecord = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this attendance record?')) return;
-    try {
-      await firebaseDelete(`attendance/${id}`);
-    } catch (err: any) {
-      alert('Error deleting record: ' + err.message);
-    }
+    toast.custom((t) => (
+      <div
+        className={`${
+          t.visible ? 'animate-in fade-in slide-in-from-top-4' : 'animate-out fade-out slide-out-to-top-4'
+        } max-w-md w-full bg-white shadow-xl rounded-2xl pointer-events-auto flex flex-col border border-red-100 overflow-hidden`}
+      >
+        <div className="bg-red-50 p-4 border-b border-red-100 flex items-start gap-3">
+          <AlertTriangle className="text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <h3 className="text-red-800 font-bold">Delete Attendance Record</h3>
+            <p className="text-red-600/80 text-sm mt-1">Are you sure you want to delete this record forever? This action cannot be reversed.</p>
+          </div>
+        </div>
+        <div className="flex bg-gray-50/50 p-2 gap-2 justify-end">
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-bold rounded-xl hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={async () => {
+              toast.dismiss(t.id);
+              const loadingToast = toast.loading("Deleting record...");
+              try {
+                await firebaseDelete(`attendance/${id}`);
+                toast.success("Record deleted", { id: loadingToast });
+              } catch (err: any) {
+                toast.error('Error deleting record: ' + err.message, { id: loadingToast });
+              }
+            }}
+            className="px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-xl hover:bg-red-700 transition-colors shadow-sm"
+          >
+            Delete Record
+          </button>
+        </div>
+      </div>
+    ), { duration: Infinity });
   };
 
   if (loading && records.length === 0) {
@@ -151,19 +190,27 @@ export function AttendanceRecords() {
                       )}
                     </td>
                     <td className="py-4 px-4">
-                      <div className={record.checkOutTime ? "text-red-600 font-bold" : "text-gray-400 italic"}>
-                        {record.checkOutTime || "Not Recorded"}
-                      </div>
+                      {record.checkOutTime === "Auto-Closed" ? (
+                        <div className="text-orange-500 font-bold flex items-center gap-1 bg-orange-50 w-fit px-2 py-1 rounded">
+                          <AlertTriangle size={12} /> Auto-Closed
+                        </div>
+                      ) : (
+                        <div className={record.checkOutTime ? "text-red-600 font-bold" : "text-gray-400 italic"}>
+                          {record.checkOutTime || "Not Recorded"}
+                        </div>
+                      )}
                     </td>
                     <td className="py-4 px-4">
                       {record.checkOutTime ? (
                         <div className="flex flex-col">
                            <span className="text-gray-900 font-bold">{calculateDuration(record.checkInTimestamp, record.checkOutTimestamp)}</span>
-                           <span className="text-[10px] text-green-500 font-bold uppercase">Completed</span>
+                           <span className={`text-[10px] font-bold uppercase ${record.checkOutTime === "Auto-Closed" ? "text-orange-500" : "text-green-500"}`}>
+                             {record.checkOutTime === "Auto-Closed" ? "System Auto" : "Completed"}
+                           </span>
                         </div>
                       ) : (
-                        <div className="flex items-center gap-2 text-orange-500">
-                          <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
+                        <div className="flex items-center gap-2 text-blue-500">
+                          <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
                           <span className="font-bold">On Duty</span>
                         </div>
                       )}

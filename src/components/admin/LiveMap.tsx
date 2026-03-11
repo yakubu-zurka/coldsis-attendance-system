@@ -1,10 +1,12 @@
+// LiveMap.tsx
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet';
 import { useFirebaseRead } from "../../hooks/useFirebaseSync";
 import { Navigation, Users, MapPin, Clock } from "lucide-react";
+import { useEffect } from 'react';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
-// Fix for Leaflet default marker icons in React
+// Keep default icon for Office
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 
@@ -14,9 +16,31 @@ let DefaultIcon = L.icon({
     iconSize: [25, 41],
     iconAnchor: [12, 41]
 });
-L.Marker.prototype.options.icon = DefaultIcon;
+// Remove this global setting, we only want it for the Office
+// L.Marker.prototype.options.icon = DefaultIcon;
 
-// Internal component to handle map centering
+
+// --- NEW: CSS Pulse Icon for Active Staff ---
+const pulseIcon = L.divIcon({
+  className: 'active-staff-marker', // Matches CSS class
+  html: '<div class="pulse-icon"></div>', // Renders the pulse element
+  iconSize: [14, 14], // Matches .pulse-icon dimensions
+  iconAnchor: [7, 7] // Center the icon on coordinates
+});
+
+
+// Internal components for Resizing and Recentering stay the same...
+function MapResizer() {
+  const map = useMap();
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [map]);
+  return null;
+}
+
 function RecenterButton({ lat, lng }: { lat: number, lng: number }) {
   const map = useMap();
   return (
@@ -33,21 +57,37 @@ function RecenterButton({ lat, lng }: { lat: number, lng: number }) {
 export function LiveMap() {
   const { data: attendanceData, loading } = useFirebaseRead<Record<string, any>>("attendance");
   
-  // Coldsis GH Office Coordinates
   const OFFICE_LAT = 5.697796;
   const OFFICE_LNG = -0.176180;
-  const GEOFENCE_RADIUS = 100; // 100 meters
+  const GEOFENCE_RADIUS = 100;
 
-  // Filter for staff currently "active" (checked in but not yet checked out)
   const activeStaff = attendanceData 
     ? Object.values(attendanceData).filter(record => record.status === "active")
     : [];
 
+  // Group coordinates to offset overlapping markers
+  const staffWithOffsets = activeStaff.map((staff, idx) => {
+    // Basic offset based on index so perfect overlapping coordinates fan out slightly
+    const offsetFactor = 0.00005; // Roughly 5 meters
+    const angle = (idx * Math.PI) / 4; // Distribute circularly
+    
+    // Only apply offset if multiple staff exist, to keep single staff centered
+    const latOffset = activeStaff.length > 1 ? Math.cos(angle) * offsetFactor : 0;
+    const lngOffset = activeStaff.length > 1 ? Math.sin(angle) * offsetFactor : 0;
+
+    return {
+      ...staff,
+      displayLat: (staff.latitude || OFFICE_LAT) + latOffset,
+      displayLng: (staff.longitude || OFFICE_LNG) + lngOffset
+    };
+  });
+
   return (
-    <div className="relative h-full w-full rounded-2xl overflow-hidden border border-gray-200 shadow-sm bg-gray-50">
+    <div className="relative h-full w-full rounded-2xl overflow-hidden border border-gray-200 shadow-sm bg-gray-200 min-h-[500px]">
       
-      {/* Live Status Overlay */}
-      <div className="absolute top-4 left-4 z-[1000] bg-white/90 backdrop-blur-md p-4 rounded-xl shadow-lg border border-white w-64">
+      {/* Live Status Overlay - Hidden on Mobile */}
+      <div className="absolute top-4 left-4 z-[1000] bg-white/95 backdrop-blur-md p-4 rounded-xl shadow-lg border border-white w-64 hidden md:block">
+        {/* ... (Status overlay content stays the same) */}
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
             <Users size={16} className="text-orange-600" /> Live Status
@@ -70,7 +110,7 @@ export function LiveMap() {
                   <span className="font-bold text-gray-700">{staff.staffName}</span>
                   <div className="flex justify-between text-gray-500">
                     <span className="flex items-center gap-1"><Clock size={10} /> {staff.checkInTime}</span>
-                    <span className="text-blue-600 font-bold">{staff.distanceFromOffice}m</span>
+                    <span className="text-blue-600 font-bold">{staff.distanceFromOffice || 0}m</span>
                   </div>
                 </div>
               ))
@@ -86,54 +126,42 @@ export function LiveMap() {
         className="h-full w-full z-0"
         zoomControl={false}
       >
+        <MapResizer />
+        
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; OpenStreetMap'
         />
 
         {/* Office Geofence Circle */}
-        <Circle 
-          center={[OFFICE_LAT, OFFICE_LNG]} 
-          radius={GEOFENCE_RADIUS} 
-          pathOptions={{ 
-            color: '#ea580c', // Orange-600 to match your theme
-            fillColor: '#ea580c', 
-            fillOpacity: 0.1,
-            weight: 2,
-            dashArray: '5, 10'
-          }} 
-        />
+        <Circle center={[OFFICE_LAT, OFFICE_LNG]} radius={GEOFENCE_RADIUS} pathOptions={{ color: '#ea580c', fillColor: '#ea580c', fillOpacity: 0.1, weight: 2, dashArray: '5, 10' }} />
 
-        {/* Office Center Marker */}
-        <Marker position={[OFFICE_LAT, OFFICE_LNG]}>
+        {/* Office Center Marker (Static blue pin) */}
+        <Marker position={[OFFICE_LAT, OFFICE_LNG]} icon={DefaultIcon}>
           <Popup>
-            <div className="text-center">
-              <p className="font-bold text-blue-900">Coldsis GH Headquarters</p>
-              <p className="text-[10px] text-gray-500">Geofence Center</p>
-            </div>
+            <p className="font-bold text-blue-900">Coldsis GH Headquarters</p>
           </Popup>
         </Marker>
 
-        {/* Staff Location Markers */}
-        {activeStaff.map((staff, idx) => (
-          <Marker 
-            key={idx} 
-            position={[staff.latitude, staff.longitude]}
-          >
-            <Popup>
-              <div className="p-1 min-w-[120px]">
-                <p className="font-bold text-gray-900 border-b pb-1 mb-1">{staff.staffName}</p>
-                <div className="space-y-1 text-xs">
-                  <p className="flex items-center gap-1 text-gray-600">
-                    <Clock size={12} className="text-orange-600" /> {staff.checkInTime}
-                  </p>
-                  <p className="flex items-center gap-1 text-gray-600">
-                    <MapPin size={12} className="text-blue-600" /> {staff.distanceFromOffice}m away
-                  </p>
+        {/* --- MODIFIED: Staff Location Markers with Pulse and Offsets --- */}
+        {staffWithOffsets.map((staff, idx) => (
+          (staff.latitude && staff.longitude) && (
+            <Marker 
+              key={idx} 
+              position={[staff.displayLat, staff.displayLng]}
+              icon={pulseIcon} 
+            >
+              <Popup>
+                <div className="p-1 min-w-[140px]">
+                  <p className="font-bold text-gray-900 border-b pb-1 mb-1 leading-tight">{staff.staffName}</p>
+                  <div className="space-y-1 text-xs text-gray-600">
+                    <p className="flex items-center gap-1"><Clock size={12} className="text-orange-600"/> {staff.checkInTime}</p>
+                    <p className="flex items-center gap-1"><MapPin size={12} className="text-blue-600"/> {staff.distanceFromOffice}m away</p>
+                  </div>
                 </div>
-              </div>
-            </Popup>
-          </Marker>
+              </Popup>
+            </Marker>
+          )
         ))}
 
         <RecenterButton lat={OFFICE_LAT} lng={OFFICE_LNG} />

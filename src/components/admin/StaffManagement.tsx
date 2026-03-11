@@ -5,7 +5,7 @@ import {
   firebaseDelete,
   firebaseUpdate,
 } from "../../hooks/useFirebaseSync";
-import { Trash2, Plus, Search, Loader2, X, Pencil, ShieldCheck } from "lucide-react";
+import { Trash2, Plus, Search, Loader2, X, Pencil, ShieldCheck, AlertTriangle } from "lucide-react";
 import { StaffMember } from "../../types";
 import { generatePin, hashPin } from "../../utils/pin";
 
@@ -23,7 +23,8 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
-    staffId: "", // Added manual ID
+    userType: "Staff", // Options: Staff, Intern, NSS
+    staffId: "", 
     name: "",
     email: "",
     telephone: "",
@@ -31,6 +32,39 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
     department: "",
     pin: "",
   });
+
+  // Calculate the next ID sequence purely based on userType prefix
+  const generateNextId = (type: string) => {
+    let prefix = "COLD";
+    if (type === "Intern") prefix = "INT";
+    if (type === "NSS") prefix = "NSS";
+
+    // Find all existing IDs with this prefix to determine the numeric max
+    const existingNums = staff
+      .map(s => s.id || "")
+      .filter(id => id.startsWith(`${prefix}-`))
+      .map(id => {
+        const parts = id.split("-");
+        return parts.length === 2 ? parseInt(parts[1], 10) : 0;
+      })
+      .filter(n => !isNaN(n));
+
+    const maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 0;
+    const nextNum = maxNum + 1;
+    
+    // Format as PREFIX-XXX
+    return `${prefix}-${nextNum.toString().padStart(3, "0")}`;
+  };
+
+  // Sync staffId whenever the userType changes (only during addition)
+  useEffect(() => {
+    if (!editingId && showForm) {
+      setFormData(prev => ({
+        ...prev,
+        staffId: generateNextId(prev.userType)
+      }));
+    }
+  }, [formData.userType, staff, showForm, editingId]);
 
   /* ------------------ LOAD STAFF ------------------ */
   useEffect(() => {
@@ -46,13 +80,20 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
 
   const openAddForm = () => {
     setEditingId(null);
-    setFormData({ staffId: "", name: "", email: "", telephone: "", role: "", department: "", pin: "" });
+    setFormData({ userType: "Staff", staffId: "", name: "", email: "", telephone: "", role: "", department: "", pin: "" });
     setShowForm(true);
   };
 
   const openEditForm = (member: StaffMember) => {
     setEditingId(member.id!);
+    
+    // Determine userType backward compatibility based on existing ID prefix
+    let parsedType = "Staff";
+    if (member.id?.startsWith("INT-")) parsedType = "Intern";
+    if (member.id?.startsWith("NSS-")) parsedType = "NSS";
+
     setFormData({
+      userType: parsedType,
       staffId: member.id!,
       name: member.name,
       email: member.email,
@@ -122,13 +163,44 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
   };
 
   const handleDeleteStaff = async (id: string) => {
-    if (!confirm(`Permanently delete staff ${id}?`)) return;
-    try {
-      await firebaseDelete(`staff/${id}`);
-      toast.success("Staff removed");
-    } catch (err) {
-      toast.error("Delete failed");
-    }
+    toast.custom((t) => (
+      <div
+        className={`${
+          t.visible ? 'animate-in fade-in slide-in-from-top-4' : 'animate-out fade-out slide-out-to-top-4'
+        } max-w-md w-full bg-white shadow-xl rounded-2xl pointer-events-auto flex flex-col border border-red-100 overflow-hidden`}
+      >
+        <div className="bg-red-50 p-4 border-b border-red-100 flex items-start gap-3">
+          <AlertTriangle className="text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <h3 className="text-red-800 font-bold">Delete Staff Record</h3>
+            <p className="text-red-600/80 text-sm mt-1">Are you sure you want to permanently delete staff <span className="font-mono font-bold">{id}</span>? This action cannot be undone.</p>
+          </div>
+        </div>
+        <div className="flex bg-gray-50/50 p-2 gap-2 justify-end">
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-bold rounded-xl hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={async () => {
+              toast.dismiss(t.id);
+              const loadingToast = toast.loading("Deleting staff...");
+              try {
+                await firebaseDelete(`staff/${id}`);
+                toast.success("Staff removed", { id: loadingToast });
+              } catch (err) {
+                toast.error("Delete failed", { id: loadingToast });
+              }
+            }}
+            className="px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-xl hover:bg-red-700 transition-colors shadow-sm"
+          >
+            Delete Permanently
+          </button>
+        </div>
+      </div>
+    ), { duration: Infinity });
   };
 
   const filteredStaff = staff.filter(
@@ -228,20 +300,39 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* USER TYPE SELECTION */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-500 ml-1">User Type</label>
+                <div className="flex gap-4">
+                  {["Staff", "Intern", "NSS"].map((type) => (
+                    <label key={type} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 transition-all cursor-pointer ${
+                      formData.userType === type 
+                      ? 'border-blue-500 bg-blue-50 text-blue-700 font-bold' 
+                      : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                    } ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                      <input 
+                        type="radio" 
+                        name="userType" 
+                        value={type} 
+                        checked={formData.userType === type}
+                        onChange={(e) => setFormData({ ...formData, userType: e.target.value })}
+                        disabled={!!editingId}
+                        className="hidden"
+                      />
+                      {type}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
               {/* STAFF ID FIELD */}
               <div className="space-y-1">
                 <label className="text-xs font-bold text-gray-500 ml-1">Company Issued ID</label>
                 <input
-                  className={`w-full px-4 py-3 border rounded-xl outline-none transition-all font-mono uppercase ${
-                    editingId 
-                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed" 
-                    : "bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-500"
-                  }`}
+                  className="w-full px-4 py-3 border rounded-xl outline-none transition-all font-mono uppercase bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
                   placeholder="e.g. COLD-001"
                   value={formData.staffId}
-                  onChange={(e) => setFormData({ ...formData, staffId: e.target.value.toUpperCase() })}
-                  disabled={!!editingId}
-                  required
+                  readOnly
                 />
               </div>
 
