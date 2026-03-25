@@ -1,10 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { useFirebaseRead, firebaseDelete } from '../../hooks/useFirebaseSync';
+import { useAuditLogger } from '../../hooks/useAuditLogger';
+import { useAuth } from '../../context/AuthContext';
 import { Trash2, Search, MapPin, Download, Loader2, Calendar, User, AlertTriangle } from 'lucide-react';
 import { exportToPDF } from '../../utils/export';
 
 export function AttendanceRecords() {
+  const { user } = useAuth();
+  const { logActivity } = useAuditLogger();
   const { data: attendanceData, loading } = useFirebaseRead<Record<string, any>>('attendance');
   const [records, setRecords] = useState<any[]>([]);
   const [search, setSearch] = useState('');
@@ -79,6 +83,7 @@ export function AttendanceRecords() {
               const loadingToast = toast.loading("Deleting record...");
               try {
                 await firebaseDelete(`attendance/${id}`);
+                await logActivity('ATTENDANCE_DELETED', `Deleted attendance record ${id}`, user?.email || 'System');
                 toast.success("Record deleted", { id: loadingToast });
               } catch (err: any) {
                 toast.error('Error deleting record: ' + err.message, { id: loadingToast });
@@ -87,6 +92,50 @@ export function AttendanceRecords() {
             className="px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-xl hover:bg-red-700 transition-colors shadow-sm"
           >
             Delete Record
+          </button>
+        </div>
+      </div>
+    ), { duration: Infinity });
+  };
+
+  const handleDeleteAll = () => {
+    if (filteredRecords.length === 0) return;
+    
+    toast.custom((t) => (
+      <div
+        className={`${
+          t.visible ? 'animate-in fade-in slide-in-from-top-4' : 'animate-out fade-out slide-out-to-top-4'
+        } max-w-md w-full bg-white dark:bg-slate-800 shadow-xl rounded-2xl pointer-events-auto flex flex-col border border-red-100 dark:border-red-900/50 overflow-hidden`}
+      >
+        <div className="bg-red-50 dark:bg-red-900/20 p-4 border-b border-red-100 dark:border-red-900/50 flex items-start gap-3">
+          <AlertTriangle className="text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <h3 className="text-red-800 dark:text-red-400 font-bold">Delete All Filtered Records</h3>
+            <p className="text-red-600/80 dark:text-red-400/80 text-sm mt-1">Are you sure you want to delete {filteredRecords.length} record(s)? This action cannot be reversed.</p>
+          </div>
+        </div>
+        <div className="flex bg-gray-50/50 dark:bg-slate-800/50 p-2 gap-2 justify-end">
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            className="px-4 py-2 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-slate-200 text-sm font-bold rounded-xl hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={async () => {
+              toast.dismiss(t.id);
+              const loadingToast = toast.loading(`Deleting ${filteredRecords.length} records...`);
+              try {
+                await Promise.all(filteredRecords.map(record => firebaseDelete(`attendance/${record.id}`)));
+                await logActivity('ATTENDANCE_DELETED', `Bulk deleted ${filteredRecords.length} attendance records`, user?.email || 'System');
+                toast.success(`Successfully deleted ${filteredRecords.length} records`, { id: loadingToast });
+              } catch (err: any) {
+                toast.error('Error during bulk delete: ' + err.message, { id: loadingToast });
+              }
+            }}
+            className="px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-xl hover:bg-red-700 transition-colors shadow-sm"
+          >
+            Delete All
           </button>
         </div>
       </div>
@@ -110,12 +159,21 @@ export function AttendanceRecords() {
             <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Attendance History</h2>
             <p className="text-sm text-gray-500 dark:text-slate-400">Track daily check-ins and work durations</p>
           </div>
-          <button 
-            onClick={() => exportToPDF(filteredRecords)} 
-            className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-slate-700 text-blue-700 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-slate-600 transition font-semibold text-sm border border-blue-100 dark:border-slate-600"
-          >
-            <Download size={18}/> PDF Report
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => exportToPDF(filteredRecords)} 
+              className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-slate-700 text-blue-700 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-slate-600 transition font-semibold text-sm border border-blue-100 dark:border-slate-600"
+            >
+              <Download size={18}/> PDF Report
+            </button>
+            <button 
+              onClick={handleDeleteAll} 
+              disabled={filteredRecords.length === 0}
+              className="flex items-center gap-2 px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/40 transition font-semibold text-sm border border-red-100 dark:border-red-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Trash2 size={18}/> Delete All
+            </button>
+          </div>
         </div>
 
         {/* Filters */}

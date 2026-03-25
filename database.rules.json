@@ -1,0 +1,13 @@
+{
+  "rules": {
+    "staff": {
+      ".read": true,
+      ".write": "auth != null"
+    },
+    "attendance": {
+      ".indexOn": ["status", "date"],
+      ".read": true,
+      ".write": true
+    }
+  }
+}

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { useDeviceDateTime } from "../hooks/useDeviceDateTime";
 import { useFirebaseRead, firebaseUpdate } from "../hooks/useFirebaseSync"; 
+import { hashPin } from "../utils/pin";
 import {
   MapPin,
   Loader2,
@@ -171,20 +172,15 @@ export function CheckIn() {
     return R * c; 
   };
 
-  async function hashPin(plainText: string) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(plainText);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
-  }
-
   const validatePin = async (): Promise<boolean> => {
     if (!selectedStaff || !staffData) return false;
     const liveStaffData = staffData[selectedStaff.id] as any;
     const storedHash = liveStaffData?.pinHash;
-    if (!storedHash) return false;
-    const enteredHash = await hashPin(pin.trim());
+    const storedSalt = liveStaffData?.pinSalt;
+    
+    if (!storedHash || !storedSalt) return false;
+    
+    const enteredHash = await hashPin(pin.trim(), storedSalt);
     return enteredHash === storedHash;
   };
 
@@ -367,14 +363,14 @@ export function CheckIn() {
                   placeholder="••••"
                   value={pin}
                   onChange={(e) => setPin(e.target.value)}
-                  className="w-full px-6 py-4 bg-white rounded-2xl focus:outline-none focus:ring-4 focus:ring-orange-400 transition-all font-bold text-center text-3xl font-mono tracking-[0.5em] text-slate-800 shadow-inner h-16"
+                  className="w-full px-6 py-4 bg-white rounded-2xl focus:outline-none focus:ring-4 focus:ring-orange-400 transition-all font-bold text-slate-800 shadow-inner"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPin(!showPin)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-orange-600 transition-colors w-10 h-10 flex items-center justify-center rounded-xl hover:bg-orange-50"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-orange-600 transition-colors"
                 >
-                  {showPin ? <EyeOff size={22} /> : <Eye size={22} />}
+                  {showPin ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
               </div>
             </div>
@@ -390,7 +386,7 @@ export function CheckIn() {
               type="submit"
               disabled={state === "loading"}
               className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-[0.2em] text-white shadow-[0_10px_20px_-10px_rgba(0,0,0,0.5)] transition-all active:scale-95 flex items-center justify-center gap-3 border-b-4 active:border-b-0 ${
-                isCheckedIn ? "bg-slate-900 border-slate-700 hover:bg-black disabled:opacity-50" : "bg-slate-900 border-slate-700 hover:bg-black disabled:opacity-50"
+                isCheckedIn ? "bg-red-600 border-red-800 hover:bg-red-700 disabled:opacity-50" : "bg-slate-900 border-slate-700 hover:bg-black disabled:opacity-50"
               }`}
             >
               {state === "loading" ? <Loader2 className="w-6 h-6 animate-spin" /> : isCheckedIn ? <LogOut size={22} /> : <MapPin size={22} />}

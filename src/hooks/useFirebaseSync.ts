@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ref, onValue, set, push, remove, update } from 'firebase/database';
+import { ref, onValue, set, push, remove, update, query, orderByChild, equalTo, limitToLast } from 'firebase/database';
 import { database } from '../lib/firebase';
 
 export function useFirebaseRead<T>(path: string) {
@@ -27,6 +27,39 @@ export function useFirebaseRead<T>(path: string) {
 
     return () => unsubscribe();
   }, [path]);
+
+  return { data, loading, error };
+}
+
+export function useFirebaseQuery<T>(path: string, childKey: string, value: any, limit?: number) {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let q = query(ref(database, path), orderByChild(childKey), equalTo(value));
+    if (limit) {
+      q = query(ref(database, path), orderByChild(childKey), equalTo(value), limitToLast(limit));
+    }
+    
+    const unsubscribe = onValue(
+      q,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setData(snapshot.val());
+        } else {
+          setData(null);
+        }
+        setLoading(false);
+      },
+      (err) => {
+        setError(err.message);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [path, childKey, value, limit]);
 
   return { data, loading, error };
 }
@@ -63,4 +96,33 @@ export async function firebaseDelete(path: string) {
   } catch (err: any) {
     throw new Error(err.message);
   }
+}
+
+export function useFirebaseRecent<T>(path: string, limit: number = 100) {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const q = query(ref(database, path), limitToLast(limit));
+    const unsubscribe = onValue(
+      q,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setData(snapshot.val());
+        } else {
+          setData(null);
+        }
+        setLoading(false);
+      },
+      (err) => {
+        setError(err.message);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [path, limit]);
+
+  return { data, loading, error };
 }

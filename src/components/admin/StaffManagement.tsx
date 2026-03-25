@@ -1,19 +1,19 @@
 import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
-import {
-  useFirebaseRead,
-  firebaseDelete,
-  firebaseUpdate,
-} from "../../hooks/useFirebaseSync";
+import { useFirebaseRead, firebaseDelete, firebaseUpdate } from "../../hooks/useFirebaseSync";
+import { useAuditLogger } from "../../hooks/useAuditLogger";
+import { useAuth } from "../../context/AuthContext";
 import { Trash2, Plus, Search, Loader2, X, Pencil, ShieldCheck, AlertTriangle } from "lucide-react";
 import { StaffMember } from "../../types";
-import { generatePin, hashPin } from "../../utils/pin";
+import { generatePin, hashPin, generateSalt } from "../../utils/pin";
 
 interface StaffManagementProps {
   isAddForm?: boolean;
 }
 
 export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
+  const { user } = useAuth();
+  const { logActivity } = useAuditLogger();
   const { data: staffData, loading } = useFirebaseRead<Record<string, StaffMember>>("staff");
 
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -127,6 +127,7 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
           department: formData.department,
           updatedAt: Date.now(),
         });
+        await logActivity('STAFF_UPDATED', `Updated details for staff ${formData.staffId}`, user?.email || 'System');
         toast.success("Staff record updated");
       } else {
         // Validation for new record
@@ -136,7 +137,8 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
           return;
         }
 
-        const pinHash = await hashPin(formData.pin);
+        const pinSalt = generateSalt();
+        const pinHash = await hashPin(formData.pin, pinSalt);
 
         // Use custom staffId as the Firebase key
         await firebaseUpdate(`staff/${formData.staffId}`, {
@@ -147,9 +149,11 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
           role: formData.role,
           department: formData.department,
           pinHash,
+          pinSalt,
           createdAt: Date.now(),
         });
 
+        await logActivity('STAFF_ADDED', `Registered new staff member ${formData.staffId}`, user?.email || 'System');
         toast.success(`Registered! ID: ${formData.staffId} | PIN: ${formData.pin}`, { duration: 6000 });
       }
 
@@ -167,19 +171,19 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
       <div
         className={`${
           t.visible ? 'animate-in fade-in slide-in-from-top-4' : 'animate-out fade-out slide-out-to-top-4'
-        } max-w-md w-full bg-white shadow-xl rounded-2xl pointer-events-auto flex flex-col border border-red-100 overflow-hidden`}
+        } max-w-md w-full bg-white dark:bg-gray-800 shadow-xl rounded-2xl pointer-events-auto flex flex-col border border-red-100 dark:border-red-900/50 overflow-hidden`}
       >
-        <div className="bg-red-50 p-4 border-b border-red-100 flex items-start gap-3">
-          <AlertTriangle className="text-red-600 shrink-0 mt-0.5" />
+        <div className="bg-red-50 dark:bg-red-900/20 p-4 border-b border-red-100 dark:border-red-900/50 flex items-start gap-3">
+          <AlertTriangle className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
           <div>
-            <h3 className="text-red-800 font-bold">Delete Staff Record</h3>
-            <p className="text-red-600/80 text-sm mt-1">Are you sure you want to permanently delete staff <span className="font-mono font-bold">{id}</span>? This action cannot be undone.</p>
+            <h3 className="text-red-800 dark:text-red-300 font-bold">Delete Staff Record</h3>
+            <p className="text-red-600/80 dark:text-red-400/80 text-sm mt-1">Are you sure you want to permanently delete staff <span className="font-mono font-bold">{id}</span>? This action cannot be undone.</p>
           </div>
         </div>
-        <div className="flex bg-gray-50/50 p-2 gap-2 justify-end">
+        <div className="flex bg-gray-50/50 dark:bg-gray-900/50 p-2 gap-2 justify-end">
           <button
             onClick={() => toast.dismiss(t.id)}
-            className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-bold rounded-xl hover:bg-gray-50 transition-colors"
+            className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm font-bold rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           >
             Cancel
           </button>
@@ -189,6 +193,7 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
               const loadingToast = toast.loading("Deleting staff...");
               try {
                 await firebaseDelete(`staff/${id}`);
+                await logActivity('STAFF_DELETED', `Permanently deleted staff ${id}`, user?.email || 'System');
                 toast.success("Staff removed", { id: loadingToast });
               } catch (err) {
                 toast.error("Delete failed", { id: loadingToast });
@@ -213,8 +218,8 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
   if (loading && staff.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <Loader2 className="w-10 h-10 animate-spin text-blue-700" />
-        <p className="text-gray-500 font-medium">Loading records...</p>
+        <Loader2 className="w-10 h-10 animate-spin text-blue-700 dark:text-blue-500" />
+        <p className="text-gray-500 dark:text-gray-400 font-medium">Loading records...</p>
       </div>
     );
   }
@@ -223,8 +228,8 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mt-8">
         <div>
-          <h2 className="text-3xl font-black text-gray-800">Staff Directory</h2>
-          <p className="text-gray-500 text-sm">Manage company-issued IDs and authentication</p>
+          <h2 className="text-3xl font-black text-gray-800 dark:text-white">Staff Directory</h2>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">Manage company-issued IDs and authentication</p>
         </div>
         <button
           onClick={openAddForm}
@@ -236,47 +241,47 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
       </div>
 
       <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 dark:text-gray-500" />
         <input
-          className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+          className="w-full pl-12 pr-4 py-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white dark:placeholder-gray-400"
           placeholder="Search by name, ID (e.g. COLD-001), or department..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
 
-      <div className="overflow-hidden bg-white rounded-2xl shadow-sm border border-gray-100">
+      <div className="overflow-hidden bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
         <table className="w-full text-sm text-left">
-          <thead className="bg-gray-50 border-b border-gray-100">
+          <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-100 dark:border-gray-700">
             <tr>
-              <th className="p-4 font-bold text-gray-600">ID & Name</th>
-              <th className="p-4 font-bold text-gray-600 hidden md:table-cell">Dept / Role</th>
-              <th className="p-4 font-bold text-gray-600 hidden lg:table-cell">Contact</th>
-              <th className="p-4 font-bold text-gray-600 text-center">Actions</th>
+              <th className="p-4 font-bold text-gray-600 dark:text-gray-400">ID & Name</th>
+              <th className="p-4 font-bold text-gray-600 dark:text-gray-400 hidden md:table-cell">Dept / Role</th>
+              <th className="p-4 font-bold text-gray-600 dark:text-gray-400 hidden lg:table-cell">Contact</th>
+              <th className="p-4 font-bold text-gray-600 dark:text-gray-400 text-center">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
             {filteredStaff.map((s) => (
-              <tr key={s.id} className="hover:bg-blue-50/30 transition-colors">
+              <tr key={s.id} className="hover:bg-blue-50/30 dark:hover:bg-blue-900/20 transition-colors">
                 <td className="p-4">
-                  <div className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded w-fit mb-1">
+                  <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded w-fit mb-1">
                     {s.id}
                   </div>
-                  <div className="font-bold text-gray-800">{s.name}</div>
+                  <div className="font-bold text-gray-800 dark:text-gray-200">{s.name}</div>
                 </td>
-                <td className="p-4 hidden md:table-cell text-gray-600 font-medium">
+                <td className="p-4 hidden md:table-cell text-gray-600 dark:text-gray-300 font-medium">
                   <div>{s.department || "General"}</div>
-                  <div className="text-xs text-gray-400 font-normal">{s.role}</div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 font-normal">{s.role}</div>
                 </td>
-                <td className="p-4 hidden lg:table-cell text-gray-500">
+                <td className="p-4 hidden lg:table-cell text-gray-500 dark:text-gray-400">
                   <div className="text-xs">{s.email}</div>
                   <div className="text-xs">{s.telephone}</div>
                 </td>
                 <td className="p-4 flex justify-center gap-2">
-                  <button onClick={() => openEditForm(s)} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg">
+                  <button onClick={() => openEditForm(s)} className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-lg">
                     <Pencil className="w-4 h-4" />
                   </button>
-                  <button onClick={() => handleDeleteStaff(s.id!)} className="p-2 text-red-600 hover:bg-red-100 rounded-lg">
+                  <button onClick={() => handleDeleteStaff(s.id!)} className="p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-lg">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </td>
@@ -288,13 +293,13 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl p-8 animate-in zoom-in-95 duration-200 overflow-y-auto max-h-[90vh]">
+          <div className="w-full max-w-lg bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-8 animate-in zoom-in-95 duration-200 overflow-y-auto max-h-[90vh]">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-black text-gray-800 flex items-center gap-2">
-                <ShieldCheck className="text-blue-700" />
+              <h3 className="text-2xl font-black text-gray-800 dark:text-white flex items-center gap-2">
+                <ShieldCheck className="text-blue-700 dark:text-blue-500" />
                 {editingId ? "Update Record" : "Assign Staff ID"}
               </h3>
-              <button onClick={() => setShowForm(false)} className="p-2 hover:bg-gray-100 rounded-full">
+              <button onClick={() => setShowForm(false)} className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
                 <X />
               </button>
             </div>
@@ -302,13 +307,13 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* USER TYPE SELECTION */}
               <div className="space-y-1">
-                <label className="text-xs font-bold text-gray-500 ml-1">User Type</label>
+                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 ml-1">User Type</label>
                 <div className="flex gap-4">
                   {["Staff", "Intern", "NSS"].map((type) => (
                     <label key={type} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 transition-all cursor-pointer ${
                       formData.userType === type 
-                      ? 'border-blue-500 bg-blue-50 text-blue-700 font-bold' 
-                      : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-bold' 
+                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
                     } ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`}>
                       <input 
                         type="radio" 
@@ -327,9 +332,9 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
 
               {/* STAFF ID FIELD */}
               <div className="space-y-1">
-                <label className="text-xs font-bold text-gray-500 ml-1">Company Issued ID</label>
+                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 ml-1">Company Issued ID</label>
                 <input
-                  className="w-full px-4 py-3 border rounded-xl outline-none transition-all font-mono uppercase bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                  className="w-full px-4 py-3 border rounded-xl outline-none transition-all font-mono uppercase bg-gray-100 dark:bg-gray-900 text-gray-400 border-gray-200 dark:border-gray-800 cursor-not-allowed"
                   placeholder="e.g. COLD-001"
                   value={formData.staffId}
                   readOnly
@@ -337,9 +342,9 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-gray-500 ml-1">Full Name</label>
+                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 ml-1">Full Name</label>
                 <input
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   required
@@ -348,9 +353,9 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-500 ml-1">Department</label>
+                  <label className="text-xs font-bold text-gray-500 dark:text-gray-400 ml-1">Department</label>
                   <input
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
                     value={formData.department}
                     onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                     placeholder="e.g. Finance"
@@ -358,9 +363,9 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-500 ml-1">Role</label>
+                  <label className="text-xs font-bold text-gray-500 dark:text-gray-400 ml-1">Role</label>
                   <input
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
                     value={formData.role}
                     onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                     required
@@ -370,18 +375,18 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-500 ml-1">Phone Number</label>
+                  <label className="text-xs font-bold text-gray-500 dark:text-gray-400 ml-1">Phone Number</label>
                   <input
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
                     value={formData.telephone}
                     onChange={(e) => setFormData({ ...formData, telephone: e.target.value })}
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-500 ml-1">Work Email</label>
+                  <label className="text-xs font-bold text-gray-500 dark:text-gray-400 ml-1">Work Email</label>
                   <input
                     type="email"
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   />
@@ -389,30 +394,30 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
               </div>
 
               {!editingId && (
-                <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mt-2">
-                  <label className="text-xs font-bold text-blue-700 block mb-2 text-center uppercase">Security Credential</label>
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 rounded-2xl p-4 mt-2">
+                  <label className="text-xs font-bold text-blue-700 dark:text-blue-400 block mb-2 text-center uppercase">Security Credential</label>
                   <div className="flex gap-2">
                     <input
                       readOnly
-                      className="flex-1 px-4 py-3 bg-white border border-blue-200 rounded-xl font-mono text-center tracking-[0.5em] text-lg font-bold"
+                      className="flex-1 px-4 py-3 bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-800/50 rounded-xl font-mono text-center tracking-[0.5em] text-lg font-bold dark:text-white"
                       value={formData.pin}
                       placeholder="----"
                     />
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, pin: generatePin(4) })}
-                      className="px-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors text-sm"
+                      className="px-4 bg-blue-600 dark:bg-blue-700 text-white rounded-xl font-bold hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors text-sm"
                     >
                       Generate
                     </button>
                   </div>
-                  <p className="text-[10px] text-gray-500 mt-2 text-center italic">PIN will be hashed and hidden after save.</p>
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-2 text-center italic">PIN will be hashed and hidden after save.</p>
                 </div>
               )}
 
               <button
                 disabled={adding}
-                className="w-full bg-blue-950 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:bg-blue-900 transition-all disabled:opacity-50 mt-4"
+                className="w-full bg-blue-950 dark:bg-blue-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:bg-blue-900 dark:hover:bg-blue-500 transition-all disabled:opacity-50 mt-4"
               >
                 {adding ? <Loader2 className="animate-spin mx-auto" /> : editingId ? "SAVE UPDATES" : "REGISTER & ACTIVATE"}
               </button>

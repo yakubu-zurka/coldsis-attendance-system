@@ -2,7 +2,8 @@ import { useState, lazy, Suspense, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { LogOut, Menu, X, Users, BarChart3, FileText, Map as MapIcon, Loader2, Sun, Moon } from 'lucide-react';
-import { useFirebaseRead, firebaseUpdate } from '../hooks/useFirebaseSync';
+import { useFirebaseQuery, firebaseUpdate } from '../hooks/useFirebaseSync';
+import { useAuditLogger } from '../hooks/useAuditLogger';
 import { SessionTimeout } from './admin/SessionTimeout';
 
 // Lazy load internal admin tabs
@@ -19,15 +20,16 @@ export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('attendance');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showSessionWarning] = useState(false);
+  const { logActivity } = useAuditLogger();
 
   // --- DATABASE JANITOR ---
-  const { data: attendanceData } = useFirebaseRead<Record<string, any>>("attendance");
+  const { data: activeAttendance } = useFirebaseQuery<Record<string, any>>("attendance", "status", "active");
   useEffect(() => {
-    if (!attendanceData) return;
+    if (!activeAttendance) return;
     const cleanup = async () => {
       const now = Date.now();
       const LIMIT = 14 * 60 * 60 * 1000;
-      const activeSessions = Object.entries(attendanceData).filter(
+      const activeSessions = Object.entries(activeAttendance).filter(
         ([_, r]) => r.status === "active" && !r.checkOutTime
       );
       for (const [id, record] of activeSessions) {
@@ -39,12 +41,13 @@ export function AdminDashboard() {
               status: "completed",
               systemFlags: "auto-resolved"
             });
+            await logActivity('SESSION_AUTOCLOSED', `System auto-closed session for ${record.staffName || id}`);
           } catch (e) { console.error("Cleanup failed for", id, e); }
         }
       }
     };
     cleanup();
-  }, [attendanceData]);
+  }, [activeAttendance]);
 
   const tabs = [
     { id: 'attendance' as TabType, label: 'Attendance Records', icon: BarChart3 },
