@@ -5,6 +5,7 @@ import { LogOut, Menu, X, Users, BarChart3, FileText, Map as MapIcon, Loader2, S
 import { useFirebaseQuery, firebaseUpdate } from '../hooks/useFirebaseSync';
 import { useAuditLogger } from '../hooks/useAuditLogger';
 import { SessionTimeout } from './admin/SessionTimeout';
+import { useSessionTimeout } from '../hooks/useSessionTimeout';
 
 // Lazy load internal admin tabs
 const StaffManagement = lazy(() => import('./admin/StaffManagement').then(m => ({ default: m.StaffManagement })));
@@ -19,7 +20,7 @@ export function AdminDashboard() {
   const { theme, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState<TabType>('attendance');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showSessionWarning] = useState(false);
+  const { showWarning: showSessionWarning } = useSessionTimeout(logout);
   const { logActivity } = useAuditLogger();
 
   // --- DATABASE JANITOR ---
