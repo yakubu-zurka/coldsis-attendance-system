@@ -57,9 +57,9 @@ function RecenterButton({ lat, lng }: { lat: number, lng: number }) {
 export function LiveMap() {
   const { data: attendanceData, loading } = useFirebaseRead<Record<string, any>>("attendance");
   
-  const OFFICE_LAT = 5.697796;
-  const OFFICE_LNG = -0.176180;
-  const GEOFENCE_RADIUS = 100;
+  const OFFICE_LAT = Number(import.meta.env.VITE_OFFICE_LAT) || 5.697796;
+  const OFFICE_LNG = Number(import.meta.env.VITE_OFFICE_LNG) || -0.176180;
+  const GEOFENCE_RADIUS = Number(import.meta.env.VITE_ALLOWED_RADIUS_METERS) || 100;
 
   const activeStaff = attendanceData 
     ? Object.values(attendanceData).filter(record => record.status === "active")

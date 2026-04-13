@@ -6,8 +6,37 @@
     },
     "attendance": {
       ".indexOn": ["status", "date"],
-      ".read": true,
-      ".write": true
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$recordId": {
+        ".validate": "(
+          (!data.exists() &&
+            newData.child('staffId').isString() &&
+            root.child('staff').child(newData.child('staffId').val()).exists() &&
+            newData.child('date').isString() &&
+            newData.child('status').isString() &&
+            (newData.child('status').val() === 'active' || newData.child('status').val() === 'completed') &&
+            newData.child('latitude').isNumber() &&
+            newData.child('latitude').val() >= -90 && newData.child('latitude').val() <= 90 &&
+            newData.child('longitude').isNumber() &&
+            newData.child('longitude').val() >= -180 && newData.child('longitude').val() <= 180 &&
+            newData.child('accuracy').isNumber() && newData.child('accuracy').val() >= 0 &&
+            newData.child('checkInTimestamp').isNumber()
+          )
+        ) || (
+          (data.exists() &&
+            newData.child('staffId').val() === data.child('staffId').val() &&
+            (
+              (data.child('status').val() === 'active' && newData.child('status').val() === 'completed' && newData.child('checkOutTimestamp').isNumber()) ||
+              (newData.child('staffId').isString() && newData.child('date').isString())
+            )
+          )
+        )"
+      }
+    },
+    "systemLogs": {
+      ".read": "auth != null",
+      ".write": "auth != null"
     }
   }
 }

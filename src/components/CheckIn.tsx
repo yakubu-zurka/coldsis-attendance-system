@@ -3,6 +3,7 @@ import { useGeolocation } from "../hooks/useGeolocation";
 import { useDeviceDateTime } from "../hooks/useDeviceDateTime";
 import { useFirebaseRead, firebaseUpdate } from "../hooks/useFirebaseSync"; 
 import { hashPin } from "../utils/pin";
+import { ensureAuth } from "../lib/ensureAuth";
 import {
   MapPin,
   Loader2,
@@ -15,6 +16,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { StaffMember } from "../types";
+import { calculateDistance, effectiveDistance as computeEffectiveDistance } from "../utils/geo";
 
 type CheckInState = "idle" | "loading" | "success" | "error";
 
@@ -24,9 +26,9 @@ export function CheckIn() {
   const { data: staffData } = useFirebaseRead<Record<string, StaffMember>>("staff");
 
   // --- OFFICE CONFIGURATION ---
-  const OFFICE_LAT = 5.697796;
-  const OFFICE_LNG = -0.176180;
-  const ALLOWED_RADIUS_METERS = 100; 
+  const OFFICE_LAT = Number(import.meta.env.VITE_OFFICE_LAT) || 5.697796;
+  const OFFICE_LNG = Number(import.meta.env.VITE_OFFICE_LNG) || -0.176180;
+  const ALLOWED_RADIUS_METERS = Number(import.meta.env.VITE_ALLOWED_RADIUS_METERS) || 100; 
 
   const [search, setSearch] = useState("");
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
@@ -43,6 +45,7 @@ export function CheckIn() {
   const [message, setMessage] = useState("");
   const [submittedData, setSubmittedData] = useState<any>(null);
   const [isCheckedIn, setIsCheckedIn] = useState(false);
+  const [isShiftCompleted, setIsShiftCompleted] = useState(false);
   const [sessionDate, setSessionDate] = useState<string | null>(null);
 
   // We still need the particle effect here.
@@ -140,11 +143,18 @@ export function CheckIn() {
     if (selectedStaff && todaysRecord) {
       if (todaysRecord.status === "active" || !todaysRecord.checkOutTime) {
         setIsCheckedIn(true);
+        setIsShiftCompleted(false);
+        setSessionDate(currentDate);
+        return;
+      } else if (todaysRecord.status === "completed") {
+        setIsCheckedIn(false);
+        setIsShiftCompleted(true);
         setSessionDate(currentDate);
         return;
       }
     }
     setIsCheckedIn(false);
+    setIsShiftCompleted(false);
     setSessionDate(null);
   }, [selectedStaff, todaysRecord, currentDate]);
 
@@ -161,16 +171,7 @@ export function CheckIn() {
     staff.id.toLowerCase().includes(search.toLowerCase())
   );
 
-  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371e3; 
-    const dLat = (lat2 - lat1) * (Math.PI / 180);
-    const dLon = (lon2 - lon1) * (Math.PI / 180);
-    const a = 
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; 
-  };
+  // use shared util for distance calculations (functions imported at top)
 
   const validatePin = async (): Promise<boolean> => {
     if (!selectedStaff || !staffData) return false;
@@ -187,6 +188,7 @@ export function CheckIn() {
   const handleActionRequest = async () => {
     if (state === "loading") return; 
     if (!selectedStaff) { setState("error"); setMessage("Select your identity."); return; }
+    if (isShiftCompleted) { setState("error"); setMessage("Shift already completed for today."); return; }
     if (!pin) { setState("error"); setMessage("Enter your PIN."); return; }
 
     setState("loading");
@@ -197,12 +199,38 @@ export function CheckIn() {
         setState("error"); setMessage("Invalid PIN."); return;
       }
 
+      // Ensure the client is authenticated (anonymous if needed) before attempting writes.
+      try {
+        await ensureAuth();
+      } catch (e: any) {
+        console.error('Auth error:', e);
+        setState("error");
+        const errMsg = e?.message || e?.toString() || "Authentication failed.";
+        setMessage(errMsg);
+        return;
+      }
+
       const location = await getLocation();
       if (!location) { setState("error"); setMessage(geoError || "Location required."); return; }
 
       const distance = calculateDistance(location.latitude, location.longitude, OFFICE_LAT, OFFICE_LNG);
-      if (distance > ALLOWED_RADIUS_METERS) {
-        setState("error"); setMessage(`Too far from office (${Math.round(distance)}m).`); return;
+      // Adjust distance by reported GPS accuracy to be conservative.
+      const effectiveDistance = computeEffectiveDistance(distance, location.accuracy || 0);
+
+      // Reject if calculation failed or if accuracy is too low (e.g. > 200m)
+      if (isNaN(distance) || location.accuracy > 200) {
+        setState("error");
+        setMessage(`Low location accuracy (${location.accuracy}m). Please ensure GPS is enabled and try again.`);
+        console.warn(`Geolocation unreliable: Distance=${distance}m, Accuracy=${location.accuracy}m, Coords=[${location.latitude}, ${location.longitude}]`);
+        return;
+      }
+
+      // Use the accuracy-adjusted distance to avoid allowing check-ins when position is noisy.
+      if (effectiveDistance > ALLOWED_RADIUS_METERS) {
+        setState("error");
+        setMessage(`Too far from office (${Math.round(distance)}m). You must be within ${ALLOWED_RADIUS_METERS}m. (±${location.accuracy}m)`);
+        console.log(`Geolocation check failed: Distance=${Math.round(distance)}m, EffectiveDistance=${Math.round(effectiveDistance)}m, Accuracy=${location.accuracy}m, Coords=[${location.latitude}, ${location.longitude}]`);
+        return;
       }
 
       const dateTime = getDateTime();
@@ -243,6 +271,10 @@ export function CheckIn() {
         date: effectiveDate,
         timeString: dateTime.timeString,
         action: nextAction === "checkin" ? "Checked In" : "Checked Out",
+        distanceFromOffice: Math.round(distance),
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracy: location.accuracy,
       });
 
       setState("success");
@@ -256,7 +288,10 @@ export function CheckIn() {
       }, 5000);
 
     } catch (err: any) {
-      setState("error"); setMessage("System error.");
+      console.error('Check-in failed:', err);
+      setState("error");
+      const msg = err?.message || err?.toString() || "System error.";
+      setMessage(msg);
     }
   };
 
@@ -294,9 +329,17 @@ export function CheckIn() {
             <div className="bg-white/10 backdrop-blur-md py-6 px-4 rounded-3xl border border-white/20 shadow-inner">
               <p className="text-5xl font-black text-white tracking-tighter drop-shadow-md">{submittedData.timeString}</p>
             </div>
-            <p className="font-black uppercase tracking-[0.2em] text-[10px] py-3 px-6 rounded-full bg-green-500/20 text-green-300 border border-green-500/30 inline-block backdrop-blur-md shadow-lg">
-              {submittedData.action} SUCCESSFUL
-            </p>
+            <div className="flex flex-col items-center gap-2">
+                <p className="font-black uppercase tracking-[0.2em] text-[10px] py-3 px-6 rounded-full bg-green-500/20 text-green-300 border border-green-500/30 inline-block backdrop-blur-md shadow-lg">
+                {submittedData.action} SUCCESSFUL
+                </p>
+                <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest mt-2 flex items-center gap-1">
+                    <MapPin size={10} /> {submittedData.distanceFromOffice}m from office
+                </p>
+                <p className="text-[8px] font-mono text-white/40 mt-1">
+                  Coords: {submittedData.latitude?.toFixed(6)}, {submittedData.longitude?.toFixed(6)} (±{submittedData.accuracy}m)
+                </p>
+            </div>
           </div>
         ) : (
           <form className="space-y-6" onSubmit={(e) => { e.preventDefault(); handleActionRequest(); }}>
@@ -384,13 +427,16 @@ export function CheckIn() {
 
             <button
               type="submit"
-              disabled={state === "loading"}
+              disabled={state === "loading" || (isShiftCompleted && !isCheckedIn)}
               className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-[0.2em] text-white shadow-[0_10px_20px_-10px_rgba(0,0,0,0.5)] transition-all active:scale-95 flex items-center justify-center gap-3 border-b-4 active:border-b-0 ${
+                isShiftCompleted && !isCheckedIn ? "bg-slate-500 border-slate-600 cursor-not-allowed" :
                 isCheckedIn ? "bg-red-600 border-red-800 hover:bg-red-700 disabled:opacity-50" : "bg-slate-900 border-slate-700 hover:bg-black disabled:opacity-50"
               }`}
             >
-              {state === "loading" ? <Loader2 className="w-6 h-6 animate-spin" /> : isCheckedIn ? <LogOut size={22} /> : <MapPin size={22} />}
-              {isCheckedIn ? "Check Out" : "Check In"}
+              {state === "loading" ? <Loader2 className="w-6 h-6 animate-spin" /> : 
+               isShiftCompleted && !isCheckedIn ? <CheckCircle size={22} /> :
+               isCheckedIn ? <LogOut size={22} /> : <MapPin size={22} />}
+              {isShiftCompleted && !isCheckedIn ? "Shift Completed" : isCheckedIn ? "Check Out" : "Check In"}
             </button>
           </form>
         )}

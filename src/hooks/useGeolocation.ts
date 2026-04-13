@@ -22,14 +22,16 @@ export function useGeolocation() {
 
       navigator.geolocation.getCurrentPosition(
         (position) => {
+          console.log("Raw Geolocation Position:", position);
           const coords: LocationData = {
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
             accuracy: Math.round(position.coords.accuracy),
+            timestamp: position.timestamp,
           };
           setLocation(coords);
           setLoading(false);
-          resolve(coords); // This "returns" the data to the 'await' call
+          resolve(coords);
         },
         (err) => {
           const errorMessage = {
@@ -40,8 +42,8 @@ export function useGeolocation() {
           
           setError(errorMessage);
           setLoading(false);
-          // Instead of just setting error, we reject so the try/catch in CheckIn catches it
-          resolve(null); 
+          // Resolve null so callers can handle gracefully; error is set in hook state
+          resolve(null);
         },
         {
           enableHighAccuracy: true,
