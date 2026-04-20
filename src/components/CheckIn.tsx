@@ -232,7 +232,7 @@ export function CheckIn() {
         const liveRecord = serverSnap.val();
         if (nextAction === "checkin" && liveRecord.checkInTimestamp && liveRecord.status !== "completed") {
           setState("error");
-          setMessage(`Already checked in at ${liveRecord.checkInTime || 'earlier today'}. Use Checkout instead.`);
+          setMessage(`Already checked in at ${liveRecord.checkInTime || 'earlier today'}. Please refresh and checkout instead.`);
           return;
         } else if (nextAction === "checkin" && liveRecord.status === "completed") {
           setState("error");
