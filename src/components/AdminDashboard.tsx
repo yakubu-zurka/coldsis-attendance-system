@@ -114,8 +114,8 @@ export function AdminDashboard() {
           className={`
             fixed top-16 bottom-0 left-0 w-64 
             transition-all duration-300 ease-in-out z-40
-            bg-slate-900 dark:bg-slate-950 text-white 
-            lg:bg-gray-100 lg:dark:bg-slate-800
+            bg-slate-900 dark:bg-slate-900 text-white 
+            lg:bg-gray-100 lg:dark:bg-slate-900
             lg:text-slate-800 lg:dark:text-slate-200
             lg:border-r border-gray-200 dark:border-slate-700
             ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} 

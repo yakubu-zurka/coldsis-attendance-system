@@ -8,6 +8,11 @@ export function useFirebaseRead<T>(path: string) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Reset state when path changes to ensure clean fetches
+    setLoading(true);
+    // Don't nullify data immediately to avoid flickering, 
+    // but ensure loading state protects consumers from using stale data.
+    
     const dbRef = ref(database, path);
     const unsubscribe = onValue(
       dbRef,

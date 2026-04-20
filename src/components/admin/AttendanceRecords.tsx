@@ -204,8 +204,8 @@ export function AttendanceRecords() {
           </button>
         </div>
 
-        {/* Records Table */}
-        <div className="overflow-x-auto border border-gray-100 dark:border-slate-700 rounded-lg">
+        {/* Records Table (desktop) */}
+        <div className="hidden md:block overflow-x-auto border border-gray-100 dark:border-slate-700 rounded-lg">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/60 text-gray-600 dark:text-slate-300 uppercase text-xs tracking-wider">
@@ -286,6 +286,41 @@ export function AttendanceRecords() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile: condensed cards */}
+        <div className="md:hidden space-y-3">
+          {filteredRecords.length === 0 ? (
+            <div className="py-12 text-center">
+              <div className="flex flex-col items-center text-gray-400">
+                <Search size={40} className="mb-2 opacity-20" />
+                <p>No attendance records found.</p>
+              </div>
+            </div>
+          ) : (
+            filteredRecords.map((record) => (
+              <div key={record.id} className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-slate-700">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="text-sm font-bold text-gray-800 dark:text-slate-200">{record.staffName}</div>
+                    <div className="text-xs text-gray-500 dark:text-slate-400">{record.staffId} • {record.date}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className={`text-lg font-black ${record.checkOutTime ? 'text-gray-900 dark:text-slate-200' : 'text-blue-500'}`}>{record.checkInTime || '--:--'}</div>
+                    <div className="text-xs text-gray-400 mt-1">{record.checkOutTime || 'On Duty'}</div>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-between">
+                  <div className="text-[11px] text-gray-500 dark:text-slate-400">{record.latitude ? <span className="inline-flex items-center gap-1"><MapPin size={12}/> GPS Verified</span> : <span>—</span>}</div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => handleDeleteRecord(record.id)} className="p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-lg">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { useDeviceDateTime } from "../hooks/useDeviceDateTime";
-import { useFirebaseRead, firebaseUpdate } from "../hooks/useFirebaseSync"; 
+import { useFirebaseRead, firebaseUpdate } from "../hooks/useFirebaseSync";
+import { ref, get } from "firebase/database";
+import { database } from "../lib/firebase";
 import { hashPin } from "../utils/pin";
 import { ensureAuth } from "../lib/ensureAuth";
 import {
@@ -28,16 +30,16 @@ export function CheckIn() {
   // --- OFFICE CONFIGURATION ---
   const OFFICE_LAT = Number(import.meta.env.VITE_OFFICE_LAT) || 5.697796;
   const OFFICE_LNG = Number(import.meta.env.VITE_OFFICE_LNG) || -0.176180;
-  const ALLOWED_RADIUS_METERS = Number(import.meta.env.VITE_ALLOWED_RADIUS_METERS) || 100; 
+  const ALLOWED_RADIUS_METERS = Number(import.meta.env.VITE_ALLOWED_RADIUS_METERS) || 100;
 
   const [search, setSearch] = useState("");
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
-  
+
   // Target only the selected user's record for today
   const { date: currentDate } = getDateTime();
   const targetedPath = selectedStaff ? `attendance/${selectedStaff.id}_${currentDate}` : null;
   // Passing null or empty to useFirebaseRead should be handled safely by the hook
-  const { data: todaysRecord } = useFirebaseRead<any>(targetedPath || "___NOT_FOUND___");
+  const { data: todaysRecord, loading: todaysLoading } = useFirebaseRead<any>(targetedPath || "___NOT_FOUND___");
 
   const [pin, setPin] = useState("");
   const [showPin, setShowPin] = useState(false);
@@ -115,7 +117,7 @@ export function CheckIn() {
 
     const init = () => {
       particles = [];
-      const count = Math.min(window.innerWidth / 10, 80); 
+      const count = Math.min(window.innerWidth / 10, 80);
       for (let i = 0; i < count; i++) particles.push(new Particle());
     };
 
@@ -140,8 +142,11 @@ export function CheckIn() {
 
   // Manage internal check-in state based on targeted record
   useEffect(() => {
+    // Prevent overriding state with stale/null data while the fresh db request is loading
+    if (todaysLoading) return;
+
     if (selectedStaff && todaysRecord) {
-      if (todaysRecord.status === "active" || !todaysRecord.checkOutTime) {
+      if (todaysRecord.status === "active" || (!todaysRecord.checkOutTime && !todaysRecord.status)) {
         setIsCheckedIn(true);
         setIsShiftCompleted(false);
         setSessionDate(currentDate);
@@ -153,16 +158,18 @@ export function CheckIn() {
         return;
       }
     }
+    
+    // Only reset if we are definitively fully loaded and no active/completed record exists
     setIsCheckedIn(false);
     setIsShiftCompleted(false);
     setSessionDate(null);
-  }, [selectedStaff, todaysRecord, currentDate]);
+  }, [selectedStaff, todaysRecord, todaysLoading, currentDate]);
 
   const staffList = staffData
     ? Object.entries(staffData).map(([id, member]) => ({
-        ...member,
-        id, // This is your custom ID (e.g. COLD-001)
-      }))
+      ...member,
+      id, // This is your custom ID (e.g. COLD-001)
+    }))
     : [];
 
   // Updated filter to include ID searching
@@ -178,18 +185,21 @@ export function CheckIn() {
     const liveStaffData = staffData[selectedStaff.id] as any;
     const storedHash = liveStaffData?.pinHash;
     const storedSalt = liveStaffData?.pinSalt;
-    
+
     if (!storedHash || !storedSalt) return false;
-    
+
     const enteredHash = await hashPin(pin.trim(), storedSalt);
     return enteredHash === storedHash;
   };
 
   const handleActionRequest = async () => {
-    if (state === "loading") return; 
+    if (state === "loading") return;
     if (!selectedStaff) { setState("error"); setMessage("Select your identity."); return; }
     if (isShiftCompleted) { setState("error"); setMessage("Shift already completed for today."); return; }
     if (!pin) { setState("error"); setMessage("Enter your PIN."); return; }
+
+    // If today's record is still loading from the server, block actions until known
+    if (todaysLoading) { setState("error"); setMessage("Checking existing attendance... please wait."); return; }
 
     setState("loading");
     setMessage("Verifying location...");
@@ -199,7 +209,7 @@ export function CheckIn() {
         setState("error"); setMessage("Invalid PIN."); return;
       }
 
-      // Ensure the client is authenticated (anonymous if needed) before attempting writes.
+      // Ensure the client is authenticated (anonymous if needed) before attempting reads/writes.
       try {
         await ensureAuth();
       } catch (e: any) {
@@ -208,6 +218,27 @@ export function CheckIn() {
         const errMsg = e?.message || e?.toString() || "Authentication failed.";
         setMessage(errMsg);
         return;
+      }
+
+      // Force a server check before processing action to prevent race condition bypassing UI
+      const dateTime = getDateTime();
+      const nextAction = isCheckedIn ? "checkout" : "checkin";
+      const effectiveDate = isCheckedIn && sessionDate ? sessionDate : dateTime.date;
+      const recordId = `${selectedStaff.id}_${effectiveDate}`;
+
+      const serverCheckRef = ref(database, `attendance/${recordId}`);
+      const serverSnap = await get(serverCheckRef);
+      if (serverSnap.exists()) {
+        const liveRecord = serverSnap.val();
+        if (nextAction === "checkin" && liveRecord.checkInTimestamp && liveRecord.status !== "completed") {
+          setState("error");
+          setMessage(`Already checked in at ${liveRecord.checkInTime || 'earlier today'}. Use Checkout instead.`);
+          return;
+        } else if (nextAction === "checkin" && liveRecord.status === "completed") {
+          setState("error");
+          setMessage("Your shift is already completed for today.");
+          return;
+        }
       }
 
       const location = await getLocation();
@@ -233,10 +264,7 @@ export function CheckIn() {
         return;
       }
 
-      const dateTime = getDateTime();
-      const nextAction = isCheckedIn ? "checkout" : "checkin";
-      const effectiveDate = isCheckedIn && sessionDate ? sessionDate : dateTime.date;
-      const recordId = `${selectedStaff.id}_${effectiveDate}`;
+      // (already extracted recordId and nextAction above)
 
       let payload: any = {
         distanceFromOffice: Math.round(distance),
@@ -265,6 +293,14 @@ export function CheckIn() {
 
       await firebaseUpdate(`attendance/${recordId}`, payload);
 
+      // Immediately update UI state to reflect the new check-in without waiting for the
+      // realtime listener. This prevents a short race where a user could attempt another
+      // check-in before the listener updates `todaysRecord`.
+      if (nextAction === "checkin") {
+        setIsCheckedIn(true);
+        setSessionDate(effectiveDate);
+      }
+
       setSubmittedData({
         staffName: selectedStaff.name,
         staffId: selectedStaff.id,
@@ -278,10 +314,10 @@ export function CheckIn() {
       });
 
       setState("success");
-      
+
       // Because `attendanceData` gets updated via Firebase real-time listener, 
       // the `isCheckedIn` state will automatically flip in the useEffect.
-      
+
       setTimeout(() => {
         if (nextAction === "checkout") { setSelectedStaff(null); setSearch(""); }
         setPin(""); setState("idle"); setMessage("");
@@ -298,9 +334,9 @@ export function CheckIn() {
   return (
     <div className="relative min-h-screen bg-orange-600 flex items-center justify-center p-4 overflow-hidden">
       {/* 1. Particle Layer (High Contrast) */}
-      <canvas 
-        ref={canvasRef} 
-        className="absolute inset-0 z-0 pointer-events-none block" 
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 z-0 pointer-events-none block"
         style={{ filter: 'drop-shadow(0 0 5px rgba(255,255,255,0.3))' }}
       />
 
@@ -323,22 +359,22 @@ export function CheckIn() {
           <div className="text-center space-y-5 animate-in fade-in zoom-in duration-300">
             <CheckCircle className="w-24 h-24 text-green-400 mx-auto drop-shadow-[0_0_15px_rgba(74,222,128,0.5)]" />
             <div>
-               <h2 className="font-black text-3xl text-white uppercase tracking-tighter">{submittedData.staffName}</h2>
-               <p className="text-orange-300 font-black text-sm tracking-widest mt-1">{submittedData.staffId}</p>
+              <h2 className="font-black text-3xl text-white uppercase tracking-tighter">{submittedData.staffName}</h2>
+              <p className="text-orange-300 font-black text-sm tracking-widest mt-1">{submittedData.staffId}</p>
             </div>
             <div className="bg-white/10 backdrop-blur-md py-6 px-4 rounded-3xl border border-white/20 shadow-inner">
               <p className="text-5xl font-black text-white tracking-tighter drop-shadow-md">{submittedData.timeString}</p>
             </div>
             <div className="flex flex-col items-center gap-2">
-                <p className="font-black uppercase tracking-[0.2em] text-[10px] py-3 px-6 rounded-full bg-green-500/20 text-green-300 border border-green-500/30 inline-block backdrop-blur-md shadow-lg">
+              <p className="font-black uppercase tracking-[0.2em] text-[10px] py-3 px-6 rounded-full bg-green-500/20 text-green-300 border border-green-500/30 inline-block backdrop-blur-md shadow-lg">
                 {submittedData.action} SUCCESSFUL
-                </p>
-                <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest mt-2 flex items-center gap-1">
-                    <MapPin size={10} /> {submittedData.distanceFromOffice}m from office
-                </p>
-                <p className="text-[8px] font-mono text-white/40 mt-1">
-                  Coords: {submittedData.latitude?.toFixed(6)}, {submittedData.longitude?.toFixed(6)} (±{submittedData.accuracy}m)
-                </p>
+              </p>
+              <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest mt-2 flex items-center gap-1">
+                <MapPin size={10} /> {submittedData.distanceFromOffice}m from office
+              </p>
+              <p className="text-[8px] font-mono text-white/40 mt-1">
+                Coords: {submittedData.latitude?.toFixed(6)}, {submittedData.longitude?.toFixed(6)} (±{submittedData.accuracy}m)
+              </p>
             </div>
           </div>
         ) : (
@@ -365,11 +401,11 @@ export function CheckIn() {
                         className="w-full text-left px-5 py-4 hover:bg-orange-50 flex justify-between items-center group transition-colors"
                       >
                         <div>
-                            <p className="font-bold text-slate-800 group-hover:text-orange-600 transition-colors">{staff.name}</p>
-                            <p className="text-[10px] text-slate-500 font-bold uppercase transition-colors">{staff.department || "General"}</p>
+                          <p className="font-bold text-slate-800 group-hover:text-orange-600 transition-colors">{staff.name}</p>
+                          <p className="text-[10px] text-slate-500 font-bold uppercase transition-colors">{staff.department || "General"}</p>
                         </div>
                         <span className="text-[10px] font-black bg-slate-100 group-hover:bg-orange-100 group-hover:text-orange-700 px-2 py-1 rounded-lg text-slate-500 uppercase transition-colors">
-                            {staff.id}
+                          {staff.id}
                         </span>
                       </button>
                     ))}
@@ -380,19 +416,19 @@ export function CheckIn() {
               <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[2rem] p-6 text-white shadow-xl relative overflow-hidden group">
                 <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                 <div className="relative z-10 flex justify-between items-start">
-                    <div>
-                        <p className="text-[10px] font-black opacity-70 uppercase tracking-[0.2em] mb-2 drop-shadow-md">Signed In As</p>
-                        <h2 className="font-black text-2xl leading-tight uppercase drop-shadow-lg tracking-tight">{selectedStaff.name}</h2>
-                        <div className="flex gap-2 mt-3 block">
-                            <span className="text-[10px] bg-white/20 backdrop-blur-sm px-3 py-1 rounded-lg font-black border border-white/10 shadow-sm">{selectedStaff.id}</span>
-                            <span className="text-[10px] bg-orange-500/80 backdrop-blur-sm px-3 py-1 rounded-lg font-black uppercase border border-orange-400/50 shadow-sm">{selectedStaff.department || "General"}</span>
-                        </div>
+                  <div>
+                    <p className="text-[10px] font-black opacity-70 uppercase tracking-[0.2em] mb-2 drop-shadow-md">Signed In As</p>
+                    <h2 className="font-black text-2xl leading-tight uppercase drop-shadow-lg tracking-tight">{selectedStaff.name}</h2>
+                    <div className="flex gap-2 mt-3 block">
+                      <span className="text-[10px] bg-white/20 backdrop-blur-sm px-3 py-1 rounded-lg font-black border border-white/10 shadow-sm">{selectedStaff.id}</span>
+                      <span className="text-[10px] bg-orange-500/80 backdrop-blur-sm px-3 py-1 rounded-lg font-black uppercase border border-orange-400/50 shadow-sm">{selectedStaff.department || "General"}</span>
                     </div>
-                    {!isCheckedIn && (
-                        <button type="button" onClick={() => setSelectedStaff(null)} className="p-3 bg-white/10 hover:bg-red-500/80 border border-white/10 hover:border-red-400/50 rounded-2xl transition-all shadow-lg active:scale-95 group/btn">
-                            <LogOut size={18} className="text-white group-hover/btn:text-white" />
-                        </button>
-                    )}
+                  </div>
+                  {!isCheckedIn && (
+                    <button type="button" onClick={() => setSelectedStaff(null)} className="p-3 bg-white/10 hover:bg-red-500/80 border border-white/10 hover:border-red-400/50 rounded-2xl transition-all shadow-lg active:scale-95 group/btn">
+                      <LogOut size={18} className="text-white group-hover/btn:text-white" />
+                    </button>
+                  )}
                 </div>
                 <UserCheck className="absolute -right-6 -bottom-6 w-32 h-32 opacity-10 drop-shadow-2xl mix-blend-overlay" />
               </div>
@@ -428,14 +464,13 @@ export function CheckIn() {
             <button
               type="submit"
               disabled={state === "loading" || (isShiftCompleted && !isCheckedIn)}
-              className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-[0.2em] text-white shadow-[0_10px_20px_-10px_rgba(0,0,0,0.5)] transition-all active:scale-95 flex items-center justify-center gap-3 border-b-4 active:border-b-0 ${
-                isShiftCompleted && !isCheckedIn ? "bg-slate-500 border-slate-600 cursor-not-allowed" :
-                isCheckedIn ? "bg-red-600 border-red-800 hover:bg-red-700 disabled:opacity-50" : "bg-slate-900 border-slate-700 hover:bg-black disabled:opacity-50"
-              }`}
+              className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-[0.2em] text-white shadow-[0_10px_20px_-10px_rgba(0,0,0,0.5)] transition-all active:scale-95 flex items-center justify-center gap-3 border-b-4 active:border-b-0 ${isShiftCompleted && !isCheckedIn ? "bg-slate-500 border-slate-600 cursor-not-allowed" :
+                  isCheckedIn ? "bg-red-600 border-red-800 hover:bg-red-700 disabled:opacity-50" : "bg-slate-900 border-slate-700 hover:bg-black disabled:opacity-50"
+                }`}
             >
-              {state === "loading" ? <Loader2 className="w-6 h-6 animate-spin" /> : 
-               isShiftCompleted && !isCheckedIn ? <CheckCircle size={22} /> :
-               isCheckedIn ? <LogOut size={22} /> : <MapPin size={22} />}
+              {state === "loading" ? <Loader2 className="w-6 h-6 animate-spin" /> :
+                isShiftCompleted && !isCheckedIn ? <CheckCircle size={22} /> :
+                  isCheckedIn ? <LogOut size={22} /> : <MapPin size={22} />}
               {isShiftCompleted && !isCheckedIn ? "Shift Completed" : isCheckedIn ? "Check Out" : "Check In"}
             </button>
           </form>

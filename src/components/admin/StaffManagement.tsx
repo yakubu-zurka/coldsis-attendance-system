@@ -250,8 +250,10 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
         />
       </div>
 
-      <div className="overflow-hidden bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-        <table className="w-full text-sm text-left">
+      <div className="space-y-4">
+        {/* Desktop table */}
+        <div className="hidden md:block overflow-hidden bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+          <table className="w-full text-sm text-left">
           <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-100 dark:border-gray-700">
             <tr>
               <th className="p-4 font-bold text-gray-600 dark:text-gray-400">ID & Name</th>
@@ -289,6 +291,30 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
             ))}
           </tbody>
         </table>
+        </div>
+
+        {/* Mobile: stacked staff cards */}
+        <div className="md:hidden space-y-3">
+          {filteredStaff.map((s) => (
+            <div key={s.id} className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 flex items-start justify-between">
+              <div>
+                <div className="text-xs font-bold text-blue-600 dark:text-blue-400 mb-1">{s.id}</div>
+                <div className="font-bold text-gray-800 dark:text-gray-200">{s.name}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">{s.department || 'General'} • {s.role}</div>
+              </div>
+              <div className="flex flex-col items-end gap-2">
+                <div className="flex gap-2">
+                  <button onClick={() => openEditForm(s)} className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-lg">
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => handleDeleteStaff(s.id!)} className="p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-lg">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {showForm && (
