@@ -1,11 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { useDeviceDateTime } from "../hooks/useDeviceDateTime";
-import { useFirebaseRead, firebaseUpdate } from "../hooks/useFirebaseSync";
-import { ref, get } from "firebase/database";
-import { database } from "../lib/firebase";
+import { useApi, apiRequest } from "../hooks/useApi";
 import { hashPin } from "../utils/pin";
-import { ensureAuth } from "../lib/ensureAuth";
 import {
   MapPin,
   Loader2,
@@ -25,7 +22,7 @@ type CheckInState = "idle" | "loading" | "success" | "error";
 export function CheckIn() {
   const { getLocation, error: geoError } = useGeolocation();
   const { getDateTime } = useDeviceDateTime();
-  const { data: staffData } = useFirebaseRead<Record<string, StaffMember>>("staff");
+  const { data: staffData } = useApi<StaffMember[]>("/api/auth/staff");
 
   // --- OFFICE CONFIGURATION ---
   const OFFICE_LAT = Number(import.meta.env.VITE_OFFICE_LAT) || 5.697796;
@@ -35,11 +32,23 @@ export function CheckIn() {
   const [search, setSearch] = useState("");
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
 
-  // Target only the selected user's record for today
   const { date: currentDate } = getDateTime();
-  const targetedPath = selectedStaff ? `attendance/${selectedStaff.id}_${currentDate}` : null;
-  // Passing null or empty to useFirebaseRead should be handled safely by the hook
-  const { data: todaysRecord, loading: todaysLoading } = useFirebaseRead<any>(targetedPath || "___NOT_FOUND___");
+
+  // Replace single firebase call with custom fetch per staff for today's record
+  const [todaysRecord, setTodaysRecord] = useState<any>(null);
+  const [todaysLoading, setTodaysLoading] = useState(false);
+
+  useEffect(() => {
+    if (selectedStaff) {
+      setTodaysLoading(true);
+      apiRequest(`/api/attendance/today/${selectedStaff.id}?date=${currentDate}`)
+        .then((data) => {
+          setTodaysRecord(data);
+        })
+        .catch(console.error)
+        .finally(() => setTodaysLoading(false));
+    }
+  }, [selectedStaff, currentDate]);
 
   const [pin, setPin] = useState("");
   const [showPin, setShowPin] = useState(false);
@@ -50,7 +59,6 @@ export function CheckIn() {
   const [isShiftCompleted, setIsShiftCompleted] = useState(false);
   const [sessionDate, setSessionDate] = useState<string | null>(null);
 
-  // We still need the particle effect here.
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -88,14 +96,13 @@ export function CheckIn() {
       }
       draw() {
         if (!ctx) return;
-        ctx.fillStyle = "rgba(255, 255, 255, 0.8)"; // Higher opacity white
+        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
         ctx.fill();
       }
     }
 
-    // Function to draw lines between nearby particles
     const connect = () => {
       for (let a = 0; a < particles.length; a++) {
         for (let b = a; b < particles.length; b++) {
@@ -103,7 +110,7 @@ export function CheckIn() {
           let dy = particles[a].y - particles[b].y;
           let distance = Math.sqrt(dx * dx + dy * dy);
 
-          if (distance < 150) { // Connection radius
+          if (distance < 150) {
             ctx.strokeStyle = `rgba(255, 255, 255, ${1 - distance / 150})`;
             ctx.lineWidth = 1;
             ctx.beginPath();
@@ -140,13 +147,11 @@ export function CheckIn() {
     };
   }, []);
 
-  // Manage internal check-in state based on targeted record
   useEffect(() => {
-    // Prevent overriding state with stale/null data while the fresh db request is loading
     if (todaysLoading) return;
 
     if (selectedStaff && todaysRecord) {
-      if (todaysRecord.status === "active" || (!todaysRecord.checkOutTime && !todaysRecord.status)) {
+      if (todaysRecord.status === "active" || (!todaysRecord.checkOut && !todaysRecord.status)) {
         setIsCheckedIn(true);
         setIsShiftCompleted(false);
         setSessionDate(currentDate);
@@ -159,30 +164,23 @@ export function CheckIn() {
       }
     }
     
-    // Only reset if we are definitively fully loaded and no active/completed record exists
     setIsCheckedIn(false);
     setIsShiftCompleted(false);
     setSessionDate(null);
   }, [selectedStaff, todaysRecord, todaysLoading, currentDate]);
 
-  const staffList = staffData
-    ? Object.entries(staffData).map(([id, member]) => ({
-      ...member,
-      id, // This is your custom ID (e.g. COLD-001)
-    }))
-    : [];
+  const staffList = staffData || [];
 
-  // Updated filter to include ID searching
   const filteredStaff = staffList.filter((staff) =>
     staff.name.toLowerCase().includes(search.toLowerCase()) ||
     staff.id.toLowerCase().includes(search.toLowerCase())
   );
 
-  // use shared util for distance calculations (functions imported at top)
-
   const validatePin = async (): Promise<boolean> => {
     if (!selectedStaff || !staffData) return false;
-    const liveStaffData = staffData[selectedStaff.id] as any;
+    // We expect the backend API to return pinHash and pinSalt.
+    // Ensure you populate these in your DB for local validation to work!
+    const liveStaffData = staffData.find(s => s.id === selectedStaff.id) as any;
     const storedHash = liveStaffData?.pinHash;
     const storedSalt = liveStaffData?.pinSalt;
 
@@ -198,7 +196,6 @@ export function CheckIn() {
     if (isShiftCompleted) { setState("error"); setMessage("Shift already completed for today."); return; }
     if (!pin) { setState("error"); setMessage("Enter your PIN."); return; }
 
-    // If today's record is still loading from the server, block actions until known
     if (todaysLoading) { setState("error"); setMessage("Checking existing attendance... please wait."); return; }
 
     setState("loading");
@@ -209,96 +206,63 @@ export function CheckIn() {
         setState("error"); setMessage("Invalid PIN."); return;
       }
 
-      // Ensure the client is authenticated (anonymous if needed) before attempting reads/writes.
-      try {
-        await ensureAuth();
-      } catch (e: any) {
-        console.error('Auth error:', e);
-        setState("error");
-        const errMsg = e?.message || e?.toString() || "Authentication failed.";
-        setMessage(errMsg);
-        return;
-      }
-
-      // Force a server check before processing action to prevent race condition bypassing UI
       const dateTime = getDateTime();
       const nextAction = isCheckedIn ? "checkout" : "checkin";
       const effectiveDate = isCheckedIn && sessionDate ? sessionDate : dateTime.date;
-      const recordId = `${selectedStaff.id}_${effectiveDate}`;
 
-      const serverCheckRef = ref(database, `attendance/${recordId}`);
-      const serverSnap = await get(serverCheckRef);
-      if (serverSnap.exists()) {
-        const liveRecord = serverSnap.val();
-        if (nextAction === "checkin" && liveRecord.checkInTimestamp && liveRecord.status !== "completed") {
+      // Ensure no double check-ins
+      if (nextAction === "checkin" && todaysRecord && todaysRecord.status !== "completed") {
           setState("error");
-          setMessage(`Already checked in at ${liveRecord.checkInTime || 'earlier today'}. Please refresh and checkout instead.`);
+          setMessage(`Already checked in today. Please refresh and checkout instead.`);
           return;
-        } else if (nextAction === "checkin" && liveRecord.status === "completed") {
-          setState("error");
-          setMessage("Your shift is already completed for today.");
-          return;
-        }
       }
 
       const location = await getLocation();
       if (!location) { setState("error"); setMessage(geoError || "Location required."); return; }
 
       const distance = calculateDistance(location.latitude, location.longitude, OFFICE_LAT, OFFICE_LNG);
-      // Adjust distance by reported GPS accuracy to be conservative.
       const effectiveDistance = computeEffectiveDistance(distance, location.accuracy || 0);
 
-      // Reject if calculation failed or if accuracy is too low (e.g. > 200m)
       if (isNaN(distance) || location.accuracy > 200) {
         setState("error");
         setMessage(`Low location accuracy (${location.accuracy}m). Please ensure GPS is enabled and try again.`);
-        console.warn(`Geolocation unreliable: Distance=${distance}m, Accuracy=${location.accuracy}m, Coords=[${location.latitude}, ${location.longitude}]`);
         return;
       }
 
-      // Use the accuracy-adjusted distance to avoid allowing check-ins when position is noisy.
       if (effectiveDistance > ALLOWED_RADIUS_METERS) {
         setState("error");
         setMessage(`Too far from office (${Math.round(distance)}m). You must be within ${ALLOWED_RADIUS_METERS}m. (±${location.accuracy}m)`);
-        console.log(`Geolocation check failed: Distance=${Math.round(distance)}m, EffectiveDistance=${Math.round(effectiveDistance)}m, Accuracy=${location.accuracy}m, Coords=[${location.latitude}, ${location.longitude}]`);
         return;
       }
 
-      // (already extracted recordId and nextAction above)
-
       let payload: any = {
-        distanceFromOffice: Math.round(distance),
-        accuracy: location.accuracy
+        staffId: selectedStaff.id,
+        staffName: selectedStaff.name,
+        department: selectedStaff.department || "N/A",
+        date: effectiveDate,
+        time: dateTime.timeString,
+        timestamp: dateTime.timestamp,
+        location: {
+           lat: location.latitude,
+           lng: location.longitude,
+           accuracy: location.accuracy
+        },
+        deviceInfo: navigator.userAgent,
+        isWithinGeofence: true
       };
 
-      if (nextAction === "checkin") {
-        Object.assign(payload, {
-          staffId: selectedStaff.id,
-          staffName: selectedStaff.name,
-          department: selectedStaff.department || "N/A",
-          date: effectiveDate,
-          checkInTime: dateTime.timeString,
-          checkInTimestamp: dateTime.timestamp,
-          latitude: location.latitude,
-          longitude: location.longitude,
-          status: "active"
-        });
-      } else {
-        Object.assign(payload, {
-          checkOutTime: dateTime.timeString,
-          checkOutTimestamp: dateTime.timestamp,
-          status: "completed"
-        });
-      }
+      const endpoint = nextAction === "checkin" ? "/api/attendance/check-in" : "/api/attendance/check-out";
+      
+      await apiRequest(endpoint, "POST", payload);
 
-      await firebaseUpdate(`attendance/${recordId}`, payload);
-
-      // Immediately update UI state to reflect the new check-in without waiting for the
-      // realtime listener. This prevents a short race where a user could attempt another
-      // check-in before the listener updates `todaysRecord`.
       if (nextAction === "checkin") {
         setIsCheckedIn(true);
         setSessionDate(effectiveDate);
+        setTodaysRecord({ ...payload, status: 'active', checkIn: payload });
+      } else {
+        setIsCheckedIn(false);
+        setIsShiftCompleted(true);
+        setTodaysRecord({ ...todaysRecord, status: 'completed', checkOut: payload });
       }
 
       setSubmittedData({
@@ -315,9 +279,6 @@ export function CheckIn() {
 
       setState("success");
 
-      // Because `attendanceData` gets updated via Firebase real-time listener, 
-      // the `isCheckedIn` state will automatically flip in the useEffect.
-
       setTimeout(() => {
         if (nextAction === "checkout") { setSelectedStaff(null); setSearch(""); }
         setPin(""); setState("idle"); setMessage("");
@@ -326,30 +287,23 @@ export function CheckIn() {
     } catch (err: any) {
       console.error('Check-in failed:', err);
       setState("error");
-      const msg = err?.message || err?.toString() || "System error.";
-      setMessage(msg);
+      setMessage(err?.message || "System error.");
     }
   };
 
   return (
     <div className="relative min-h-screen bg-orange-600 flex items-center justify-center p-4 overflow-hidden">
-      {/* 1. Particle Layer (High Contrast) */}
       <canvas
         ref={canvasRef}
         className="absolute inset-0 z-0 pointer-events-none block"
         style={{ filter: 'drop-shadow(0 0 5px rgba(255,255,255,0.3))' }}
       />
-
-      {/* 2. Deep Glows for Contrast */}
       <div className="absolute inset-0 bg-gradient-to-b from-orange-500/50 to-orange-700/50 z-0" />
-
-      {/* 3. Original Wave (Now more transparent to let particles pop) */}
       <div className="absolute inset-0 z-0 opacity-20 pointer-events-none">
         <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" viewBox="0 0 1440 320">
           <path d="M0,160L60,176C120,192,240,224,360,213.3C480,203,600,149,720,144C840,139,960,181,1080,197.3C1200,213,1320,203,1380,197.3L1440,192L1440,320L0,320Z" fill="white" />
         </svg>
       </div>
-
       <div className="relative bg-white/10 backdrop-blur-xl border border-white/30 rounded-[2.5rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] p-8 sm:p-12 max-w-md w-full z-10">
         <div className="flex justify-center mb-8">
           <img src="/coldsis-logo_FitMaxWzM1MiwyNjRd.png" alt="COLDSiS Logo" className="h-20 drop-shadow-lg" />

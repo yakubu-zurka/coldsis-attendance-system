@@ -1,20 +1,19 @@
 import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
-import { useFirebaseRead, firebaseDelete, firebaseUpdate } from "../../hooks/useFirebaseSync";
+import { useApi, apiRequest, getSocket } from "../../hooks/useApi";
 import { useAuditLogger } from "../../hooks/useAuditLogger";
 import { useAuth } from "../../context/AuthContext";
 import { Trash2, Plus, Search, Loader2, X, Pencil, ShieldCheck, AlertTriangle } from "lucide-react";
 import { StaffMember } from "../../types";
 import { generatePin, hashPin, generateSalt } from "../../utils/pin";
 
-interface StaffManagementProps {
-  isAddForm?: boolean;
-}
 
-export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
+export function StaffManagement() {
   const { user } = useAuth();
   const { logActivity } = useAuditLogger();
-  const { data: staffData, loading } = useFirebaseRead<Record<string, StaffMember>>("staff");
+  
+  // Use our custom REST API
+  const { data: staffData, loading } = useApi<StaffMember[]>("/api/auth/staff");
 
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [search, setSearch] = useState("");
@@ -66,17 +65,34 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
     }
   }, [formData.userType, staff, showForm, editingId]);
 
-  /* ------------------ LOAD STAFF ------------------ */
+  /* ------------------ LOAD STAFF (from REST API) + Socket.io real-time ------------------ */
   useEffect(() => {
     if (staffData) {
-      setStaff(
-        Object.entries(staffData).map(([id, member]) => ({
-          ...member,
-          id, // id will now be your manual ID (e.g. COLD-001)
-        }))
-      );
+      setStaff(staffData);
     }
   }, [staffData]);
+
+  // Listen for real-time staff updates via Socket.io
+  useEffect(() => {
+    const socket = getSocket();
+    socket.on('staff_added', (newStaff: StaffMember) => {
+      setStaff(prev => {
+        if (prev.some(s => s.id === newStaff.id)) return prev;
+        return [...prev, newStaff];
+      });
+    });
+    socket.on('staff_updated', (updated: StaffMember) => {
+      setStaff(prev => prev.map(s => s.id === updated.id ? updated : s));
+    });
+    socket.on('staff_deleted', (deletedId: string) => {
+      setStaff(prev => prev.filter(s => s.id !== deletedId));
+    });
+    return () => {
+      socket.off('staff_added');
+      socket.off('staff_updated');
+      socket.off('staff_deleted');
+    };
+  }, []);
 
   const openAddForm = () => {
     setEditingId(null);
@@ -118,17 +134,18 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
 
     try {
       if (editingId) {
-        // Update existing record
-        await firebaseUpdate(`staff/${editingId}`, {
+        // Update existing record via REST
+        await apiRequest(`/api/auth/staff/${editingId}`, 'PUT', {
           name: formData.name,
           email: formData.email,
           telephone: formData.telephone,
           role: formData.role,
           department: formData.department,
-          updatedAt: Date.now(),
-        });
+        }, user?.token);
         await logActivity('STAFF_UPDATED', `Updated details for staff ${formData.staffId}`, user?.email || 'System');
         toast.success("Staff record updated");
+        // Update local state immediately
+        setStaff(prev => prev.map(s => s.id === editingId ? { ...s, ...formData } : s));
       } else {
         // Validation for new record
         if (formData.pin.length < 4) {
@@ -140,27 +157,33 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
         const pinSalt = generateSalt();
         const pinHash = await hashPin(formData.pin, pinSalt);
 
-        // Use custom staffId as the Firebase key
-        await firebaseUpdate(`staff/${formData.staffId}`, {
+        // Register via REST API
+        const newStaff = await apiRequest('/api/auth/register', 'POST', {
           id: formData.staffId,
           name: formData.name,
-          email: formData.email,
+          email: formData.email || `${formData.staffId.toLowerCase()}@coldsis.com`,
+          password: formData.pin,
           telephone: formData.telephone,
-          role: formData.role,
+          role: formData.role,         // Job title (Developer, Manager, etc.)
+          systemRole: 'staff',         // Access level — always 'staff' for new staff
           department: formData.department,
           pinHash,
           pinSalt,
-          createdAt: Date.now(),
-        });
+        }, user?.token);
 
         await logActivity('STAFF_ADDED', `Registered new staff member ${formData.staffId}`, user?.email || 'System');
         toast.success(`Registered! ID: ${formData.staffId} | PIN: ${formData.pin}`, { duration: 6000 });
+        // Update local state with deduplication (in case socket event fired first)
+        setStaff(prev => {
+          if (prev.some(s => s.id === newStaff.id)) return prev;
+          return [...prev, newStaff];
+        });
       }
 
       setShowForm(false);
       setEditingId(null);
     } catch (err: any) {
-      toast.error("Operation failed. ID might already exist.");
+      toast.error(err.message || "Operation failed. ID might already exist.");
     } finally {
       setAdding(false);
     }
@@ -192,8 +215,9 @@ export function StaffManagement({ isAddForm = false }: StaffManagementProps) {
               toast.dismiss(t.id);
               const loadingToast = toast.loading("Deleting staff...");
               try {
-                await firebaseDelete(`staff/${id}`);
+                await apiRequest(`/api/auth/staff/${id}`, 'DELETE', undefined, user?.token);
                 await logActivity('STAFF_DELETED', `Permanently deleted staff ${id}`, user?.email || 'System');
+                setStaff(prev => prev.filter(s => s.id !== id));
                 toast.success("Staff removed", { id: loadingToast });
               } catch (err) {
                 toast.error("Delete failed", { id: loadingToast });

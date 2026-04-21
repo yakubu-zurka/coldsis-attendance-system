@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import toast from 'react-hot-toast';
-import { useFirebaseRead, firebaseDelete } from '../../hooks/useFirebaseSync';
+import { useApi, apiRequest, getSocket } from '../../hooks/useApi';
 import { useAuditLogger } from '../../hooks/useAuditLogger';
 import { useAuth } from '../../context/AuthContext';
 import { Trash2, Search, MapPin, Download, Loader2, Calendar, User, AlertTriangle } from 'lucide-react';
@@ -9,7 +9,7 @@ import { exportToPDF } from '../../utils/export';
 export function AttendanceRecords() {
   const { user } = useAuth();
   const { logActivity } = useAuditLogger();
-  const { data: attendanceData, loading } = useFirebaseRead<Record<string, any>>('attendance');
+  const { data: attendanceData, loading } = useApi<any[]>('/api/attendance');
   const [records, setRecords] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -17,12 +17,28 @@ export function AttendanceRecords() {
 
   useEffect(() => {
     if (attendanceData) {
-      const recordsArray = Object.entries(attendanceData)
-        .map(([id, record]) => ({ ...record, id }))
-        .sort((a, b) => (b.checkInTimestamp || 0) - (a.checkInTimestamp || 0));
-      setRecords(recordsArray);
+      // API already returns sorted array
+      const sorted = [...attendanceData].sort(
+        (a, b) => (b.checkIn?.timestamp || 0) - (a.checkIn?.timestamp || 0)
+      );
+      setRecords(sorted);
     }
   }, [attendanceData]);
+
+  // Real-time socket updates
+  useEffect(() => {
+    const socket = getSocket();
+    socket.on('attendance_update', (updated: any) => {
+      setRecords(prev => {
+        const exists = prev.find(r => r._id === updated._id);
+        if (exists) {
+          return prev.map(r => r._id === updated._id ? updated : r);
+        }
+        return [updated, ...prev];
+      });
+    });
+    return () => { socket.off('attendance_update'); };
+  }, []);
 
   const filteredRecords = useMemo(() => {
     return records.filter((record) => {
@@ -40,19 +56,15 @@ export function AttendanceRecords() {
     });
   }, [records, search, dateFrom, dateTo]);
 
-  const calculateDuration = (inTime?: number, outTime?: number) => {
+  const calculateDuration = (checkIn?: { timestamp?: number }, checkOut?: { timestamp?: number }) => {
+    const inTime = checkIn?.timestamp;
+    const outTime = checkOut?.timestamp;
     if (!inTime || !outTime) return null;
     const diff = outTime - inTime;
-    
-    // If the diff is wildly huge or negative, it might be an auto-close fallback
     if (diff < 0) return "0h 0m";
-
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-
-    // Cap displayed duration at 14h if it was auto-closed at the 14h mark
     if (hours >= 14) return "14h 0m (Max)";
-    
     return `${hours}h ${minutes}m`;
   };
 
@@ -82,8 +94,9 @@ export function AttendanceRecords() {
               toast.dismiss(t.id);
               const loadingToast = toast.loading("Deleting record...");
               try {
-                await firebaseDelete(`attendance/${id}`);
+                await apiRequest(`/api/attendance/${id}`, 'DELETE', undefined, user?.token);
                 await logActivity('ATTENDANCE_DELETED', `Deleted attendance record ${id}`, user?.email || 'System');
+                setRecords(prev => prev.filter(r => r._id !== id));
                 toast.success("Record deleted", { id: loadingToast });
               } catch (err: any) {
                 toast.error('Error deleting record: ' + err.message, { id: loadingToast });
@@ -126,8 +139,10 @@ export function AttendanceRecords() {
               toast.dismiss(t.id);
               const loadingToast = toast.loading(`Deleting ${filteredRecords.length} records...`);
               try {
-                await Promise.all(filteredRecords.map(record => firebaseDelete(`attendance/${record.id}`)));
+                await Promise.all(filteredRecords.map(record => apiRequest(`/api/attendance/${record._id}`, 'DELETE', undefined, user?.token)));
                 await logActivity('ATTENDANCE_DELETED', `Bulk deleted ${filteredRecords.length} attendance records`, user?.email || 'System');
+                const deletedIds = new Set(filteredRecords.map(r => r._id));
+                setRecords(prev => prev.filter(r => !deletedIds.has(r._id)));
                 toast.success(`Successfully deleted ${filteredRecords.length} records`, { id: loadingToast });
               } catch (err: any) {
                 toast.error('Error during bulk delete: ' + err.message, { id: loadingToast });
@@ -240,30 +255,30 @@ export function AttendanceRecords() {
                     </td>
                     <td className="py-4 px-4 text-gray-600 dark:text-slate-400 font-medium">{record.date}</td>
                     <td className="py-4 px-4">
-                      <div className="text-green-600 font-bold">{record.checkInTime || "--:--"}</div>
-                      {record.latitude && (
+                      <div className="text-green-600 font-bold">{record.checkIn?.time || "--:--"}</div>
+                      {record.checkIn?.location && (
                         <span className="flex items-center text-[10px] text-gray-400 mt-1">
                           <MapPin size={10} className="mr-1" /> GPS Verified
                         </span>
                       )}
                     </td>
                     <td className="py-4 px-4">
-                      {record.checkOutTime === "Auto-Closed" ? (
+                      {record.checkOut?.time === "Auto-Closed" ? (
                         <div className="text-orange-500 font-bold flex items-center gap-1 bg-orange-50 dark:bg-orange-900/20 w-fit px-2 py-1 rounded">
                           <AlertTriangle size={12} /> Auto-Closed
                         </div>
                       ) : (
-                        <div className={record.checkOutTime ? "text-red-600 font-bold" : "text-gray-400 dark:text-slate-500 italic"}>
-                          {record.checkOutTime || "Not Recorded"}
+                        <div className={record.checkOut?.time ? "text-red-600 font-bold" : "text-gray-400 dark:text-slate-500 italic"}>
+                          {record.checkOut?.time || "Not Recorded"}
                         </div>
                       )}
                     </td>
                     <td className="py-4 px-4">
-                      {record.checkOutTime ? (
+                      {record.checkOut?.time ? (
                         <div className="flex flex-col">
-                           <span className="text-gray-900 dark:text-slate-200 font-bold">{calculateDuration(record.checkInTimestamp, record.checkOutTimestamp)}</span>
-                           <span className={`text-[10px] font-bold uppercase ${record.checkOutTime === "Auto-Closed" ? "text-orange-500" : "text-green-500"}`}>
-                             {record.checkOutTime === "Auto-Closed" ? "System Auto" : "Completed"}
+                           <span className="text-gray-900 dark:text-slate-200 font-bold">{calculateDuration(record.checkIn, record.checkOut)}</span>
+                           <span className={`text-[10px] font-bold uppercase ${record.checkOut?.time === "Auto-Closed" ? "text-orange-500" : "text-green-500"}`}>
+                             {record.checkOut?.time === "Auto-Closed" ? "System Auto" : "Completed"}
                            </span>
                         </div>
                       ) : (
@@ -275,7 +290,7 @@ export function AttendanceRecords() {
                     </td>
                     <td className="py-4 px-4 text-center">
                       <button 
-                        onClick={() => handleDeleteRecord(record.id)} 
+                        onClick={() => handleDeleteRecord(record._id)} 
                         className="p-2 text-gray-300 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-all"
                       >
                         <Trash2 size={16} />
@@ -312,8 +327,8 @@ export function AttendanceRecords() {
                 </div>
                 <div className="mt-3 flex items-center justify-between">
                   <div className="text-[11px] text-gray-500 dark:text-slate-400">{record.latitude ? <span className="inline-flex items-center gap-1"><MapPin size={12}/> GPS Verified</span> : <span>—</span>}</div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => handleDeleteRecord(record.id)} className="p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-lg">
+                <div className="flex items-center gap-2">
+                    <button onClick={() => handleDeleteRecord(record._id)} className="p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-lg">
                       <Trash2 size={16} />
                     </button>
                   </div>

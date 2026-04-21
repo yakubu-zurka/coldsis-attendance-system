@@ -1,32 +1,48 @@
 import { useState, useEffect } from 'react';
-import { ref, onValue } from 'firebase/database';
-import { database } from '../lib/firebase'; // Ensure this points to your firebase setup
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export function useDeviceDateTime() {
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
 
-  // Listen to Firebase's internal connection time offset
   useEffect(() => {
-    const offsetRef = ref(database, '.info/serverTimeOffset');
-    const unsubscribe = onValue(offsetRef, (snap) => {
-      const offset = snap.val() || 0;
-      setServerOffsetMs(offset);
-    });
+    // Fetch server time to calculate offset
+    const fetchServerTime = async () => {
+      try {
+        const start = Date.now();
+        const response = await fetch(`${API_URL}/api/time`);
+        const data = await response.json();
+        const end = Date.now();
+        
+        // Approximate latency
+        const latency = (end - start) / 2;
+        const serverTimestamp = data.timestamp;
+        
+        // Offset = Server Time - Client Time
+        // When we want true server time later, we do Client Time + Offset
+        const offset = serverTimestamp - (Date.now() - latency);
+        setServerOffsetMs(offset);
+      } catch (error) {
+        console.error("Failed to fetch server time:", error);
+      }
+    };
 
-    return () => unsubscribe();
+    fetchServerTime();
+    
+    // Refresh offset every hour to handle clock drift
+    const interval = setInterval(fetchServerTime, 60 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []);
 
   const getDateTime = () => {
-    // True server time = Local Device Time + Firebase's Calculated Network Offset
+    // True server time = Local Device Time + Calculated Network Offset
     const trueServerTimestamp = Date.now() + serverOffsetMs;
     const now = new Date(trueServerTimestamp);
 
-    // Use local year, month, and day based on the tampered-proof server time
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     
-    // This creates "YYYY-MM-DD"
     const date = `${year}-${month}-${day}`; 
 
     const time = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
@@ -42,7 +58,7 @@ export function useDeviceDateTime() {
       date,
       time,
       timeString,
-      timestamp: trueServerTimestamp, // The true, un-tamperable MS timestamp
+      timestamp: trueServerTimestamp,
       dateObj: now,
     };
   };

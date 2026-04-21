@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useFirebaseRead } from '../../hooks/useFirebaseSync';
+import { useApi } from '../../hooks/useApi';
 import { useDeviceDateTime } from '../../hooks/useDeviceDateTime';
 import { AttendanceRecord } from '../../types';
 import {
@@ -35,8 +35,8 @@ const CATEGORY_ICONS: Record<string, any> = {
 
 export function Analytics() {
   const { getDateTime } = useDeviceDateTime();
-  const { data: attendanceData, loading: attendanceLoading } = useFirebaseRead<Record<string, AttendanceRecord>>('attendance');
-  const { data: staffData, loading: staffLoading } = useFirebaseRead<Record<string, any>>('staff');
+  const { data: attendanceData, loading: attendanceLoading } = useApi<AttendanceRecord[]>('/api/attendance');
+  const { data: staffData, loading: staffLoading } = useApi<any[]>('/api/auth/staff');
 
   const today = getDateTime().date;
 
@@ -45,24 +45,22 @@ export function Analytics() {
       return null;
     }
 
-    const allStaff = Object.entries(staffData).map(([id, member]) => ({
+    // staffData is now an array from the REST API
+    const allStaff = staffData.map((member: any) => ({
       ...member,
-      id,
-      category: getCategory(id),
+      category: getCategory(member.id),
     }));
 
-    // Today's check-ins
-    const todaysRecords = Object.values(attendanceData).filter(
-      (r: any) => r.date === today
-    );
+    // Today's check-ins (attendanceData is now an array)
+    const todaysRecords = attendanceData.filter((r: any) => r.date === today);
     const todaysPresentIds = new Set(todaysRecords.map((r: any) => r.staffId));
 
     // Break down by category
     const categories = ['Staff', 'Intern', 'NSS'];
     const breakdown = categories.map(cat => {
-      const members = allStaff.filter(s => s.category === cat);
-      const present = members.filter(s => todaysPresentIds.has(s.id));
-      const absent = members.filter(s => !todaysPresentIds.has(s.id));
+      const members = allStaff.filter((s: any) => s.category === cat);
+      const present = members.filter((s: any) => todaysPresentIds.has(s.id));
+      const absent = members.filter((s: any) => !todaysPresentIds.has(s.id));
       return {
         category: cat,
         total: members.length,
@@ -82,14 +80,14 @@ export function Analytics() {
     for (let i = 6; i >= 0; i--) {
       const d = new Date(Date.now() - i * 86400000);
       const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      const dayRecords = Object.values(attendanceData).filter((r: any) => r.date === dateStr);
+      const dayRecords = attendanceData.filter((r: any) => r.date === dateStr);
       const uniqueOnDay = new Set(dayRecords.map((r: any) => r.staffId)).size;
-      last7Days.push({ date: dateStr.slice(5), count: uniqueOnDay }); // MM-DD
+      last7Days.push({ date: dateStr.slice(5), count: uniqueOnDay });
     }
 
     // Top 7 most-present staff (all-time)
     const allTimeByStaff: Record<string, { name: string; count: number; category: string }> = {};
-    Object.values(attendanceData).forEach((r: any) => {
+    attendanceData.forEach((r: any) => {
       if (!allTimeByStaff[r.staffId]) {
         allTimeByStaff[r.staffId] = { name: r.staffName || r.staffId, count: 0, category: getCategory(r.staffId) };
       }

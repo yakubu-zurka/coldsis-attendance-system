@@ -1,4 +1,11 @@
-import { User } from 'firebase/auth';
+export interface User {
+  _id: string;
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  token?: string;
+}
 
 export interface StaffMember {
   id: string;        // Now represents your manual ID (e.g., COLD-001)

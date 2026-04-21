@@ -1,10 +1,9 @@
-import { useState, lazy, Suspense, useEffect } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { LogOut, Menu, X, Users, BarChart3, FileText, Map as MapIcon, Loader2, Sun, Moon } from 'lucide-react';
-import { useFirebaseQuery, firebaseUpdate } from '../hooks/useFirebaseSync';
-import { useAuditLogger } from '../hooks/useAuditLogger';
 import { SessionTimeout } from './admin/SessionTimeout';
+
 import { useSessionTimeout } from '../hooks/useSessionTimeout';
 
 // Lazy load internal admin tabs
@@ -21,34 +20,8 @@ export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('attendance');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { showWarning: showSessionWarning } = useSessionTimeout(logout);
-  const { logActivity } = useAuditLogger();
 
-  // --- DATABASE JANITOR ---
-  const { data: activeAttendance } = useFirebaseQuery<Record<string, any>>("attendance", "status", "active");
-  useEffect(() => {
-    if (!activeAttendance) return;
-    const cleanup = async () => {
-      const now = Date.now();
-      const LIMIT = 14 * 60 * 60 * 1000;
-      const activeSessions = Object.entries(activeAttendance).filter(
-        ([_, r]) => r.status === "active" && !r.checkOutTime
-      );
-      for (const [id, record] of activeSessions) {
-        if (now - (record.checkInTimestamp || 0) > LIMIT) {
-          try {
-            await firebaseUpdate(`attendance/${id}`, {
-              checkOutTime: "Auto-Closed",
-              checkOutTimestamp: now,
-              status: "completed",
-              systemFlags: "auto-resolved"
-            });
-            await logActivity('SESSION_AUTOCLOSED', `System auto-closed session for ${record.staffName || id}`);
-          } catch (e) { console.error("Cleanup failed for", id, e); }
-        }
-      }
-    };
-    cleanup();
-  }, [activeAttendance]);
+  // --- DATABASE JANITOR (Moved to backend cron/scheduled task in a real migration) ---
 
   const tabs = [
     { id: 'attendance' as TabType, label: 'Attendance Records', icon: BarChart3 },

@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged, User, setPersistence, browserSessionPersistence } from 'firebase/auth';
-import { auth } from '../lib/firebase';
-import { AuthContextType } from '../types';
+import { AuthContextType, User } from '../types';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -11,19 +11,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser: User | null) => {
-      setUser(currentUser);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    // Check for user in local storage
+    const storedUser = localStorage.getItem('userInfo');
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
+    setLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
     setError(null);
     try {
-      await setPersistence(auth, browserSessionPersistence);
-      await signInWithEmailAndPassword(auth, email, password);
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Login failed');
+      }
+
+      localStorage.setItem('userInfo', JSON.stringify(data));
+      setUser(data);
     } catch (err: any) {
       setError(err.message || 'Login failed');
       throw err;
@@ -32,11 +44,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     setError(null);
-    try {
-      await signOut(auth);
-    } catch (err: any) {
-      setError(err.message || 'Logout failed');
-    }
+    localStorage.removeItem('userInfo');
+    setUser(null);
   };
 
   return (
