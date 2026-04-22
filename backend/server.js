@@ -7,19 +7,27 @@ const { Server } = require('socket.io');
 
 const authRoutes = require('./routes/authRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
+const startAutoCheckoutJob = require('./jobs/autoCheckout');
 
 const app = express();
 const server = http.createServer(app);
 
+// Allow origins explicitly from env, fallback to localhost for development
+const allowedOrigins = [process.env.FRONTEND_URL || 'http://localhost:5173'];
+
 // Configure Socket.io
 const io = new Server(server, {
   cors: {
-    origin: '*', // Allow all for dev. Update for production.
-    methods: ['GET', 'POST']
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true
   }
 });
 
-app.use(cors());
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true
+}));
 app.use(express.json());
 
 // Inject io into req for use in controllers
@@ -36,6 +44,9 @@ io.on('connection', (socket) => {
     console.log('Client disconnected:', socket.id);
   });
 });
+
+// Start the 14-hour janitor cron job
+startAutoCheckoutJob(io);
 
 // Routes
 app.use('/api/auth', authRoutes);

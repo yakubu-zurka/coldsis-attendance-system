@@ -9,7 +9,7 @@ export type AuditAction =
 
 export function useAuditLogger() {
   const logActivity = async (action: AuditAction, details: string, adminEmail: string = 'System') => {
-    // Only log to console to save Firebase database space
+    // Log activity to console
     console.log(`[AUDIT: ${action}] by ${adminEmail} - ${details}`);
   };
 

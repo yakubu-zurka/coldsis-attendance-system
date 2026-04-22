@@ -110,7 +110,7 @@ const registerUser = async (req, res) => {
 // @access  Private
 const getStaff = async (req, res) => {
   try {
-    const staff = await User.find({}).select('-password');
+    const staff = await User.find({ systemRole: { $ne: 'admin' } }).select('-password');
     res.json(staff);
   } catch (error) {
     res.status(500).json({ message: error.message });

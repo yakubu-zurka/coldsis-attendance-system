@@ -34,7 +34,7 @@ export function CheckIn() {
 
   const { date: currentDate } = getDateTime();
 
-  // Replace single firebase call with custom fetch per staff for today's record
+  // Fetch today's record for selected staff
   const [todaysRecord, setTodaysRecord] = useState<any>(null);
   const [todaysLoading, setTodaysLoading] = useState(false);
 
