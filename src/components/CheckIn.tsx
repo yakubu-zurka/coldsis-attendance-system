@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { useDeviceDateTime } from "../hooks/useDeviceDateTime";
 import { useApi, apiRequest } from "../hooks/useApi";
@@ -13,6 +13,10 @@ import {
   Eye,
   EyeOff,
   UserCheck,
+  FileText,
+  Clock,
+  ArrowLeft,
+  BadgeCheck
 } from "lucide-react";
 import { StaffMember } from "../types";
 import { calculateDistance, effectiveDistance as computeEffectiveDistance } from "../utils/geo";
@@ -58,6 +62,8 @@ export function CheckIn() {
   const [isCheckedIn, setIsCheckedIn] = useState(false);
   const [isShiftCompleted, setIsShiftCompleted] = useState(false);
   const [sessionDate, setSessionDate] = useState<string | null>(null);
+  const [isExcuseMode, setIsExcuseMode] = useState(false);
+  const [excuseReason, setExcuseReason] = useState("");
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -163,7 +169,7 @@ export function CheckIn() {
         return;
       }
     }
-    
+
     setIsCheckedIn(false);
     setIsShiftCompleted(false);
     setSessionDate(null);
@@ -198,19 +204,23 @@ export function CheckIn() {
 
   const handleActionRequest = async () => {
     if (state === "loading") return;
+    
+    console.log("Check-in button triggered");
+
     if (!selectedStaff) { setState("error"); setMessage("Select your identity."); return; }
     if (isShiftCompleted) { setState("error"); setMessage("Shift already completed for today."); return; }
     if (!pin) { setState("error"); setMessage("Enter your PIN."); return; }
 
-    if (todaysLoading) { setState("error"); setMessage("Checking existing attendance... please wait."); return; }
-
     setState("loading");
-    setMessage("Verifying location...");
+    setMessage("Verifying PIN...");
 
     try {
-      if (!(await validatePin())) {
+      const isValid = await validatePin();
+      if (!isValid) {
         setState("error"); setMessage("Invalid PIN."); return;
       }
+
+      setMessage("Verifying location...");
 
       const dateTime = getDateTime();
       const nextAction = isCheckedIn ? "checkout" : "checkin";
@@ -218,12 +228,19 @@ export function CheckIn() {
 
       // Ensure no double check-ins
       if (nextAction === "checkin" && todaysRecord && todaysRecord.status !== "completed") {
-          setState("error");
-          setMessage(`Already checked in today. Please refresh and checkout instead.`);
-          return;
+        setState("error");
+        setMessage(`Already checked in today. Please refresh and checkout instead.`);
+        return;
       }
 
-      const location = await getLocation();
+      // Add a timeout to geolocation to prevent hanging
+      const locationPromise = getLocation();
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Location request timed out. Please check your GPS.")), 10000)
+      );
+
+      const location = await Promise.race([locationPromise, timeoutPromise]) as any;
+
       if (!location) { setState("error"); setMessage(geoError || "Location required."); return; }
 
       const distance = calculateDistance(location.latitude, location.longitude, OFFICE_LAT, OFFICE_LNG);
@@ -249,16 +266,16 @@ export function CheckIn() {
         time: dateTime.timeString,
         timestamp: dateTime.timestamp,
         location: {
-           lat: location.latitude,
-           lng: location.longitude,
-           accuracy: location.accuracy
+          lat: location.latitude,
+          lng: location.longitude,
+          accuracy: location.accuracy
         },
         deviceInfo: navigator.userAgent,
         isWithinGeofence: true
       };
 
       const endpoint = nextAction === "checkin" ? "/api/attendance/check-in" : "/api/attendance/check-out";
-      
+
       await apiRequest(endpoint, "POST", payload);
 
       if (nextAction === "checkin") {
@@ -297,6 +314,57 @@ export function CheckIn() {
     }
   };
 
+  const handleExcuseRequest = async () => {
+    if (state === "loading") return;
+    if (!selectedStaff) return;
+    if (!pin) { setState("error"); setMessage("Enter your PIN."); return; }
+    if (!excuseReason) { setState("error"); setMessage("Please enter a reason."); return; }
+
+    setState("loading");
+    setMessage("Submitting excuse...");
+
+    try {
+      if (!(await validatePin())) {
+        setState("error"); setMessage("Invalid PIN."); return;
+      }
+
+      const { date } = getDateTime();
+
+      await apiRequest("/api/excuses", "POST", {
+        staffId: selectedStaff.id,
+        staffName: selectedStaff.name,
+        date,
+        reason: excuseReason
+      });
+
+      setSubmittedData({
+        staffName: selectedStaff.name,
+        staffId: selectedStaff.id,
+        date,
+        timeString: "ABSENCE REPORTED",
+        action: "EXCUSE",
+        distanceFromOffice: 0,
+      });
+
+      setState("success");
+
+      setTimeout(() => {
+        setSelectedStaff(null);
+        setSearch("");
+        setPin("");
+        setExcuseReason("");
+        setIsExcuseMode(false);
+        setState("idle");
+        setMessage("");
+      }, 5000);
+
+    } catch (err: any) {
+      console.error('Excuse submission failed:', err);
+      setState("error");
+      setMessage(err?.message || "System error.");
+    }
+  };
+
   return (
     <div className="relative min-h-screen bg-orange-600 flex items-center justify-center p-4 overflow-hidden">
       <canvas
@@ -310,20 +378,20 @@ export function CheckIn() {
           <path d="M0,160L60,176C120,192,240,224,360,213.3C480,203,600,149,720,144C840,139,960,181,1080,197.3C1200,213,1320,203,1380,197.3L1440,192L1440,320L0,320Z" fill="white" />
         </svg>
       </div>
-      <div className="relative bg-white/10 backdrop-blur-xl border border-white/30 rounded-[2.5rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] p-8 sm:p-12 max-w-md w-full z-10">
-        <div className="flex justify-center mb-8">
-          <img src="/coldsis-logo_FitMaxWzM1MiwyNjRd.png" alt="COLDSiS Logo" className="h-20 drop-shadow-lg" />
+      <div className="relative bg-white/10 backdrop-blur-xl border border-white/30 rounded-[2rem] sm:rounded-[2.5rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] p-6 sm:p-12 max-w-md w-[95%] sm:w-full z-10">
+        <div className="flex justify-center mb-6 sm:mb-8">
+          <img src="/coldsis-logo_FitMaxWzM1MiwyNjRd.png" alt="COLDSiS Logo" className="h-14 sm:h-20 drop-shadow-lg" />
         </div>
 
         {state === "success" && submittedData ? (
           <div className="text-center space-y-5 animate-in fade-in zoom-in duration-300">
             <CheckCircle className="w-24 h-24 text-green-400 mx-auto drop-shadow-[0_0_15px_rgba(74,222,128,0.5)]" />
             <div>
-              <h2 className="font-black text-3xl text-white uppercase tracking-tighter">{submittedData.staffName}</h2>
-              <p className="text-orange-300 font-black text-sm tracking-widest mt-1">{submittedData.staffId}</p>
+              <h2 className="font-black text-2xl sm:text-3xl text-white uppercase tracking-tighter">{submittedData.staffName}</h2>
+              <p className="text-orange-300 font-black text-xs sm:text-sm tracking-widest mt-1">{submittedData.staffId}</p>
             </div>
-            <div className="bg-white/10 backdrop-blur-md py-6 px-4 rounded-3xl border border-white/20 shadow-inner">
-              <p className="text-5xl font-black text-white tracking-tighter drop-shadow-md">{submittedData.timeString}</p>
+            <div className="bg-white/10 backdrop-blur-md py-4 sm:py-6 px-4 rounded-3xl border border-white/20 shadow-inner">
+              <p className="text-4xl sm:text-5xl font-black text-white tracking-tighter drop-shadow-md">{submittedData.timeString}</p>
             </div>
             <div className="flex flex-col items-center gap-2">
               <p className="font-black uppercase tracking-[0.2em] text-[10px] py-3 px-6 rounded-full bg-green-500/20 text-green-300 border border-green-500/30 inline-block backdrop-blur-md shadow-lg">
@@ -377,11 +445,11 @@ export function CheckIn() {
                 <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                 <div className="relative z-10 flex justify-between items-start">
                   <div>
-                    <p className="text-[10px] font-black opacity-70 uppercase tracking-[0.2em] mb-2 drop-shadow-md">Signed In As</p>
-                    <h2 className="font-black text-2xl leading-tight uppercase drop-shadow-lg tracking-tight">{selectedStaff.name}</h2>
-                    <div className="flex gap-2 mt-3 block">
-                      <span className="text-[10px] bg-white/20 backdrop-blur-sm px-3 py-1 rounded-lg font-black border border-white/10 shadow-sm">{selectedStaff.id}</span>
-                      <span className="text-[10px] bg-orange-500/80 backdrop-blur-sm px-3 py-1 rounded-lg font-black uppercase border border-orange-400/50 shadow-sm">{selectedStaff.department || "General"}</span>
+                    <p className="text-[9px] sm:text-[10px] font-black opacity-70 uppercase tracking-[0.2em] mb-1 sm:mb-2 drop-shadow-md">Signed In As</p>
+                    <h2 className="font-black text-xl sm:text-2xl leading-tight uppercase drop-shadow-lg tracking-tight">{selectedStaff.name}</h2>
+                    <div className="flex flex-wrap gap-2 mt-2 sm:mt-3">
+                      <span className="text-[9px] sm:text-[10px] bg-white/20 backdrop-blur-sm px-2 sm:px-3 py-1 rounded-lg font-black border border-white/10 shadow-sm">{selectedStaff.id}</span>
+                      <span className="text-[9px] sm:text-[10px] bg-orange-500/80 backdrop-blur-sm px-2 sm:px-3 py-1 rounded-lg font-black uppercase border border-orange-400/50 shadow-sm">{selectedStaff.department || "General"}</span>
                     </div>
                   </div>
                   {!isCheckedIn && (
@@ -390,49 +458,139 @@ export function CheckIn() {
                     </button>
                   )}
                 </div>
-                <UserCheck className="absolute -right-6 -bottom-6 w-32 h-32 opacity-10 drop-shadow-2xl mix-blend-overlay" />
+                <UserCheck className="absolute -right-6 -bottom-6 w-32 h-32 opacity-10 drop-shadow-2xl mix-blend-overlay pointer-events-none" />
+
+                <div className="mt-8 space-y-4">
+                  {!isExcuseMode ? (
+                    <>
+                      <div className="relative group">
+                        <input
+                          type={showPin ? "text" : "password"}
+                          maxLength={4}
+                          value={pin}
+                          onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                          placeholder="ENTER PIN"
+                          className="w-full bg-white/20 border-2 border-white/30 rounded-2xl px-4 py-3 sm:px-6 sm:py-4 text-center text-xl sm:text-2xl font-black tracking-[0.5em] placeholder:tracking-normal placeholder:text-white/50 focus:outline-none focus:bg-white focus:text-slate-900 focus:border-white transition-all shadow-lg"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPin(!showPin)}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors"
+                        >
+                          {showPin ? <EyeOff size={20} /> : <Eye size={20} />}
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          console.log("Check-in/out button clicked");
+                          handleActionRequest();
+                        }}
+                        disabled={state === "loading" || isShiftCompleted}
+                        className={`relative z-20 w-full py-4 sm:py-5 rounded-2xl font-black text-lg sm:text-xl uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95 cursor-pointer ${
+                          isShiftCompleted
+                            ? "bg-green-500/20 text-green-400 border border-green-500/30 cursor-not-allowed"
+                            : isCheckedIn
+                              ? "bg-red-500 hover:bg-red-600 text-white shadow-red-500/20"
+                              : "bg-white text-orange-600 hover:bg-orange-50 shadow-white/20"
+                          }`}
+                      >
+                        {state === "loading" ? (
+                          <Loader2 className="animate-spin" />
+                        ) : isShiftCompleted ? (
+                          <span className="flex items-center gap-2">
+                            <BadgeCheck />
+                            Shift Completed
+                          </span>
+                        ) : (
+                          <>
+                            {isCheckedIn ? <LogOut /> : <UserCheck />}
+                            {isCheckedIn ? "Check Out Now" : "Complete Check-In"}
+                          </>
+                        )}
+                      </button>
+
+                      {!isCheckedIn && !isShiftCompleted && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            console.log("Excuse Mode Activated");
+                            setIsExcuseMode(true);
+                          }}
+                          className="relative z-20 w-full py-3 rounded-2xl font-bold text-sm uppercase tracking-widest text-white/70 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center gap-2"
+                        >
+                          <FileText size={16} />
+                          Report Absence / Excuse
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <div className="relative z-20 space-y-4 animate-in slide-in-from-right-4 duration-300">
+                      <div className="relative">
+                        <textarea
+                          value={excuseReason}
+                          onChange={(e) => setExcuseReason(e.target.value)}
+                          placeholder="WHY ARE YOU ABSENT TODAY? (EXCUSE REASON)"
+                          className="w-full bg-white/20 border-2 border-white/30 rounded-2xl px-5 py-4 text-sm font-bold placeholder:text-white/50 focus:outline-none focus:bg-white focus:text-slate-900 focus:border-white transition-all shadow-lg min-h-[100px] resize-none"
+                        />
+                        <FileText className="absolute right-4 bottom-4 text-white/30" size={20} />
+                      </div>
+
+                      <div className="relative group">
+                        <input
+                          type={showPin ? "text" : "password"}
+                          maxLength={4}
+                          value={pin}
+                          onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                          placeholder="CONFIRM PIN"
+                          className="w-full bg-white/20 border-2 border-white/30 rounded-2xl px-4 py-3 sm:px-6 sm:py-4 text-center text-xl sm:text-2xl font-black tracking-[0.5em] placeholder:tracking-normal placeholder:text-white/50 focus:outline-none focus:bg-white focus:text-slate-900 focus:border-white transition-all shadow-lg"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPin(!showPin)}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors"
+                        >
+                          {showPin ? <EyeOff size={20} /> : <Eye size={20} />}
+                        </button>
+                      </div>
+
+                      <div className="flex gap-2 sm:gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            console.log("Cancelling Excuse Mode");
+                            setIsExcuseMode(false);
+                          }}
+                          className="flex-1 py-3 sm:py-4 rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-widest bg-white/10 text-white hover:bg-white/20 transition-all cursor-pointer relative z-30"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            console.log("Submitting Excuse");
+                            handleExcuseRequest();
+                          }}
+                          disabled={state === "loading"}
+                          className="flex-[2] py-3 sm:py-4 rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-widest bg-white text-orange-600 hover:bg-orange-50 transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer relative z-30"
+                        >
+                          {state === "loading" ? <Loader2 className="animate-spin" /> : <>Submit Absence</>}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-white uppercase tracking-[0.2em] ml-2">Security PIN</label>
-              <div className="relative group">
-                <input
-                  type={showPin ? "text" : "password"}
-                  placeholder="••••"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  className="w-full px-6 py-4 bg-white rounded-2xl focus:outline-none focus:ring-4 focus:ring-orange-400 transition-all font-bold text-slate-800 shadow-inner"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPin(!showPin)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-orange-600 transition-colors"
-                >
-                  {showPin ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
-              </div>
-            </div>
 
             {message && (
-              <div className={`flex items-center text-[11px] font-black p-4 rounded-2xl border backdrop-blur-md shadow-lg ${state === 'error' ? 'text-white bg-red-600/90 border-red-400/50' : 'text-white bg-blue-600/90 border-blue-400/50'}`}>
-                {state === 'loading' ? <Loader2 className="w-5 h-5 mr-3 animate-spin shrink-0" /> : <AlertCircle className="w-5 h-5 mr-3 shrink-0" />}
-                <span className="uppercase tracking-[0.1em] leading-relaxed">{message}</span>
+              <div className={`flex items-center gap-2 p-4 rounded-2xl animate-in fade-in slide-in-from-top-2 duration-300 ${state === "error" ? "bg-red-500/20 text-red-200 border border-red-500/30" : "bg-white/10 text-white border border-white/20"
+                }`}>
+                <AlertCircle size={18} />
+                <p className="text-xs font-bold uppercase tracking-wider">{message}</p>
               </div>
             )}
-
-            <button
-              type="submit"
-              disabled={state === "loading" || (isShiftCompleted && !isCheckedIn)}
-              className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-[0.2em] text-white shadow-[0_10px_20px_-10px_rgba(0,0,0,0.5)] transition-all active:scale-95 flex items-center justify-center gap-3 border-b-4 active:border-b-0 ${isShiftCompleted && !isCheckedIn ? "bg-slate-500 border-slate-600 cursor-not-allowed" :
-                  isCheckedIn ? "bg-red-600 border-red-800 hover:bg-red-700 disabled:opacity-50" : "bg-slate-900 border-slate-700 hover:bg-black disabled:opacity-50"
-                }`}
-            >
-              {state === "loading" ? <Loader2 className="w-6 h-6 animate-spin" /> :
-                isShiftCompleted && !isCheckedIn ? <CheckCircle size={22} /> :
-                  isCheckedIn ? <LogOut size={22} /> : <MapPin size={22} />}
-              {isShiftCompleted && !isCheckedIn ? "Shift Completed" : isCheckedIn ? "Check Out" : "Check In"}
-            </button>
           </form>
         )}
 

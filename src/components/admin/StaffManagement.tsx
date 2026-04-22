@@ -246,9 +246,19 @@ export function StaffManagement() {
   const filteredStaff = staff.filter(
     (s) =>
       s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.id?.toLowerCase().includes(search.toLowerCase()) ||
+      s.id.toLowerCase().includes(search.toLowerCase()) ||
       s.department?.toLowerCase().includes(search.toLowerCase())
   );
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(filteredStaff.length / itemsPerPage);
+  const paginatedStaff = filteredStaff.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  // Reset to first page when searching
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
 
   if (loading && staff.length === 0) {
     return (
@@ -298,7 +308,7 @@ export function StaffManagement() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
-            {filteredStaff.map((s) => (
+            {paginatedStaff.map((s) => (
               <tr key={s.id} className="hover:bg-blue-50/30 dark:hover:bg-blue-900/20 transition-colors">
                 <td className="p-4">
                   <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded w-fit mb-1">
@@ -330,7 +340,7 @@ export function StaffManagement() {
 
         {/* Mobile: stacked staff cards */}
         <div className="md:hidden space-y-3">
-          {filteredStaff.map((s) => (
+          {paginatedStaff.map((s) => (
             <div key={s.id} className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 flex items-start justify-between">
               <div>
                 <div className="text-xs font-bold text-blue-600 dark:text-blue-400 mb-1">{s.id}</div>
@@ -352,7 +362,32 @@ export function StaffManagement() {
         </div>
       </div>
 
-      {showForm && (
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+          <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+            Page {currentPage} of {totalPages}
+          </p>
+          <div className="flex gap-2">
+            <button
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(prev => prev - 1)}
+              className="px-4 py-2 text-xs font-black uppercase tracking-widest bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              Previous
+            </button>
+            <button
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(prev => prev + 1)}
+              className="px-4 py-2 text-xs font-black uppercase tracking-widest bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-30 disabled:cursor-not-allowed shadow-md transition-all"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Staff Form Modal */}{showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-8 animate-in zoom-in-95 duration-200 overflow-y-auto max-h-[90vh]">
             <div className="flex justify-between items-center mb-6">

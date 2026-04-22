@@ -14,6 +14,8 @@ export function AttendanceRecords() {
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   useEffect(() => {
     if (attendanceData) {
@@ -55,6 +57,15 @@ export function AttendanceRecords() {
       return matchesSearch && matchesDateFrom && matchesDateTo;
     });
   }, [records, search, dateFrom, dateTo]);
+
+  const totalPages = Math.ceil(filteredRecords.length / itemsPerPage);
+  const paginatedRecords = useMemo(() => {
+    return filteredRecords.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  }, [filteredRecords, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, dateFrom, dateTo]);
 
   const calculateDuration = (checkIn?: { timestamp?: number }, checkOut?: { timestamp?: number }) => {
     const inTime = checkIn?.timestamp;
@@ -233,7 +244,7 @@ export function AttendanceRecords() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
-              {filteredRecords.length === 0 ? (
+              {paginatedRecords.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-12 text-center">
                     <div className="flex flex-col items-center text-gray-400">
@@ -243,7 +254,7 @@ export function AttendanceRecords() {
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map((record) => (
+                paginatedRecords.map((record) => (
                   <tr key={record.id} className="hover:bg-orange-50/30 dark:hover:bg-slate-700/40 transition-colors group">
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-2">
@@ -305,7 +316,7 @@ export function AttendanceRecords() {
 
         {/* Mobile: condensed cards */}
         <div className="md:hidden space-y-3">
-          {filteredRecords.length === 0 ? (
+          {paginatedRecords.length === 0 ? (
             <div className="py-12 text-center">
               <div className="flex flex-col items-center text-gray-400">
                 <Search size={40} className="mb-2 opacity-20" />
@@ -313,7 +324,7 @@ export function AttendanceRecords() {
               </div>
             </div>
           ) : (
-            filteredRecords.map((record) => (
+            paginatedRecords.map((record) => (
               <div key={record.id} className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-slate-700">
                 <div className="flex justify-between items-start">
                   <div>
@@ -337,6 +348,31 @@ export function AttendanceRecords() {
             ))
           )}
         </div>
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-100 dark:border-slate-700">
+            <p className="text-[10px] font-black text-gray-500 dark:text-slate-400 uppercase tracking-widest">
+              Page {currentPage} of {totalPages}
+            </p>
+            <div className="flex gap-2">
+              <button
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(prev => prev - 1)}
+                className="px-4 py-2 text-[10px] font-black uppercase tracking-widest bg-gray-50 dark:bg-slate-700 border border-gray-100 dark:border-slate-600 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                Previous
+              </button>
+              <button
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(prev => prev + 1)}
+                className="px-4 py-2 text-[10px] font-black uppercase tracking-widest bg-orange-600 text-white rounded-xl hover:bg-orange-700 disabled:opacity-30 disabled:cursor-not-allowed shadow-md transition-all"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

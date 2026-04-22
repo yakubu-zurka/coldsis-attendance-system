@@ -7,6 +7,7 @@ const { Server } = require('socket.io');
 
 const authRoutes = require('./routes/authRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
+const excuseRoutes = require('./routes/excuseRoutes');
 const startAutoCheckoutJob = require('./jobs/autoCheckout');
 
 const app = express();
@@ -51,6 +52,7 @@ startAutoCheckoutJob(io);
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use('/api/excuses', excuseRoutes);
 
 // Server Time Endpoint (Replacing Firebase serverTimeOffset)
 app.get('/api/time', (req, res) => {

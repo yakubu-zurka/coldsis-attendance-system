@@ -4,7 +4,7 @@ import { useDeviceDateTime } from '../../hooks/useDeviceDateTime';
 import { AttendanceRecord } from '../../types';
 import {
   Loader2, UserCheck, UserX, Users, Briefcase, GraduationCap, BadgeCheck,
-  TrendingUp, CalendarDays
+  TrendingUp, CalendarDays, FileText
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -37,13 +37,17 @@ export function Analytics() {
   const { getDateTime } = useDeviceDateTime();
   const { data: attendanceData, loading: attendanceLoading } = useApi<AttendanceRecord[]>('/api/attendance');
   const { data: staffData, loading: staffLoading } = useApi<any[]>('/api/auth/staff');
+  const { data: excusesData, loading: excusesLoading } = useApi<any[]>('/api/excuses');
 
   const today = getDateTime().date;
 
   const analytics = useMemo(() => {
-    if (!attendanceData || !staffData) {
+    if (!attendanceData || !staffData || !excusesData) {
       return null;
     }
+
+    // todaysExcuses
+    const todaysExcuses = excusesData.filter((e: any) => e.date === today).length;
 
     // staffData is now an array from the REST API
     const allStaff = staffData.map((member: any) => ({
@@ -76,13 +80,14 @@ export function Analytics() {
     const totalStaff = allStaff.length;
 
     // Last 7 days trend
-    const last7Days: { date: string; count: number }[] = [];
+    const last7Days: { date: string; count: number; excuses: number }[] = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(Date.now() - i * 86400000);
       const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       const dayRecords = attendanceData.filter((r: any) => r.date === dateStr);
+      const dayExcuses = excusesData.filter((e: any) => e.date === dateStr).length;
       const uniqueOnDay = new Set(dayRecords.map((r: any) => r.staffId)).size;
-      last7Days.push({ date: dateStr.slice(5), count: uniqueOnDay });
+      last7Days.push({ date: dateStr.slice(5), count: uniqueOnDay, excuses: dayExcuses });
     }
 
     // Top 7 most-present staff (all-time)
@@ -95,10 +100,10 @@ export function Analytics() {
     });
     const topStaff = Object.values(allTimeByStaff).sort((a, b) => b.count - a.count).slice(0, 7);
 
-    return { breakdown, totalPresent, totalAbsent, totalStaff, last7Days, topStaff };
-  }, [attendanceData, staffData, today]);
+    return { breakdown, totalPresent, totalAbsent, totalStaff, last7Days, topStaff, todaysExcuses };
+  }, [attendanceData, staffData, excusesData, today]);
 
-  if (attendanceLoading || staffLoading) {
+  if (attendanceLoading || staffLoading || excusesLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
@@ -114,7 +119,7 @@ export function Analytics() {
     );
   }
 
-  const { breakdown, totalPresent, totalAbsent, totalStaff, last7Days, topStaff } = analytics;
+  const { breakdown, totalPresent, totalAbsent, totalStaff, last7Days, topStaff, todaysExcuses } = analytics;
   const attendanceRate = totalStaff > 0 ? Math.round((totalPresent / totalStaff) * 100) : 0;
 
   return (
@@ -147,9 +152,9 @@ export function Analytics() {
           <UserX className="w-12 h-12 text-red-200 dark:text-red-900 absolute right-3 top-3" />
         </div>
         <div className="bg-orange-100 dark:bg-orange-900/30 rounded-2xl p-5 relative overflow-hidden">
-          <p className="text-[10px] font-black text-orange-600 dark:text-orange-400 uppercase tracking-widest">Attendance Rate</p>
-          <p className="text-4xl font-black text-orange-700 dark:text-orange-400 mt-1">{attendanceRate}%</p>
-          <TrendingUp className="w-12 h-12 text-orange-200 dark:text-orange-900 absolute right-3 top-3" />
+          <p className="text-[10px] font-black text-orange-600 dark:text-orange-400 uppercase tracking-widest">Excuses Today</p>
+          <p className="text-4xl font-black text-orange-700 dark:text-orange-400 mt-1">{todaysExcuses}</p>
+          <FileText className="w-12 h-12 text-orange-200 dark:text-orange-900 absolute right-3 top-3" />
         </div>
       </div>
 
@@ -213,7 +218,8 @@ export function Analytics() {
               <Tooltip
                 contentStyle={{ borderRadius: 12, fontSize: 12, fontWeight: 700, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
               />
-              <Line type="monotone" dataKey="count" stroke="#ea580c" strokeWidth={3} dot={{ r: 4, fill: '#ea580c' }} />
+              <Line type="monotone" name="Attendance" dataKey="count" stroke="#ea580c" strokeWidth={3} dot={{ r: 4, fill: '#ea580c' }} />
+              <Line type="monotone" name="Excuses" dataKey="excuses" stroke="#7c3aed" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: '#7c3aed' }} />
             </LineChart>
           </ResponsiveContainer>
         </div>

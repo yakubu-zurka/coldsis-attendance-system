@@ -11,8 +11,9 @@ const StaffManagement = lazy(() => import('./admin/StaffManagement').then(m => (
 const AttendanceRecords = lazy(() => import('./admin/AttendanceRecords').then(m => ({ default: m.AttendanceRecords })));
 const Analytics = lazy(() => import('./admin/Analytics').then(m => ({ default: m.Analytics })));
 const LiveMap = lazy(() => import('./admin/LiveMap').then(m => ({ default: m.LiveMap })));
+const Excuses = lazy(() => import('./admin/Excuses'));
 
-type TabType = 'staff' | 'attendance' | 'analytics' | 'map';
+type TabType = 'staff' | 'attendance' | 'analytics' | 'map' | 'excuses';
 
 export function AdminDashboard() {
   const { logout } = useAuth();
@@ -25,9 +26,10 @@ export function AdminDashboard() {
 
   const tabs = [
     { id: 'attendance' as TabType, label: 'Attendance Records', icon: BarChart3 },
+    { id: 'excuses' as TabType, label: 'Absence Excuses', icon: FileText },
     { id: 'map' as TabType, label: 'Live Map View', icon: MapIcon },
     { id: 'staff' as TabType, label: 'Staff Management', icon: Users },
-    { id: 'analytics' as TabType, label: 'Analytics', icon: FileText },
+    { id: 'analytics' as TabType, label: 'Analytics', icon: BarChart3 },
   ];
 
   return (
@@ -136,6 +138,7 @@ export function AdminDashboard() {
               </div>
             }>
               {activeTab === 'attendance' && <AttendanceRecords />}
+              {activeTab === 'excuses' && <Excuses />}
               {activeTab === 'map' && <LiveMap />}
               {activeTab === 'staff' && <StaffManagement />}
               {activeTab === 'analytics' && <Analytics />}
