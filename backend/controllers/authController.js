@@ -131,6 +131,12 @@ const updateStaff = async (req, res) => {
       user.role = req.body.role || user.role;
       user.department = req.body.department || user.department;
       
+      if (req.body.pinHash && req.body.pinSalt && req.body.password) {
+        user.pinHash = req.body.pinHash;
+        user.pinSalt = req.body.pinSalt;
+        user.password = req.body.password; // update the login password to the new PIN as well
+      }
+      
       const updatedUser = await user.save();
       
       if (req.io) {

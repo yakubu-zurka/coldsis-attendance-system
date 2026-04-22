@@ -171,10 +171,16 @@ export function CheckIn() {
 
   const staffList = staffData || [];
 
-  const filteredStaff = staffList.filter((staff) =>
-    staff.name.toLowerCase().includes(search.toLowerCase()) ||
-    staff.id.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredStaff = useMemo(() => {
+    if (!search) return [];
+    const searchLower = search.toLowerCase();
+    return staffList
+      .filter((staff) =>
+        staff.name.toLowerCase().includes(searchLower) ||
+        staff.id.toLowerCase().includes(searchLower)
+      )
+      .slice(0, 20); // Only render top 20 matches to prevent DOM lag
+  }, [staffList, search]);
 
   const validatePin = async (): Promise<boolean> => {
     if (!selectedStaff || !staffData) return false;

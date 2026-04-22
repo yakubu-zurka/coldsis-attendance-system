@@ -135,13 +135,24 @@ export function StaffManagement() {
     try {
       if (editingId) {
         // Update existing record via REST
-        await apiRequest(`/api/auth/staff/${editingId}`, 'PUT', {
+        let payload: any = {
           name: formData.name,
           email: formData.email,
           telephone: formData.telephone,
           role: formData.role,
           department: formData.department,
-        }, user?.token);
+        };
+
+        // If a new PIN was generated during edit, hash it and update
+        if (formData.pin && formData.pin.length === 4) {
+          const pinSalt = generateSalt();
+          const pinHash = await hashPin(formData.pin, pinSalt);
+          payload.pinHash = pinHash;
+          payload.pinSalt = pinSalt;
+          payload.password = pinHash; // The backend uses password field for login
+        }
+
+        await apiRequest(`/api/auth/staff/${editingId}`, 'PUT', payload, user?.token);
         await logActivity('STAFF_UPDATED', `Updated details for staff ${formData.staffId}`, user?.email || 'System');
         toast.success("Staff record updated");
         // Update local state immediately
@@ -443,27 +454,27 @@ export function StaffManagement() {
                 </div>
               </div>
 
-              {!editingId && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 rounded-2xl p-4 mt-2">
-                  <label className="text-xs font-bold text-blue-700 dark:text-blue-400 block mb-2 text-center uppercase">Security Credential</label>
-                  <div className="flex gap-2">
-                    <input
-                      readOnly
-                      className="flex-1 px-4 py-3 bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-800/50 rounded-xl font-mono text-center tracking-[0.5em] text-lg font-bold dark:text-white"
-                      value={formData.pin}
-                      placeholder="----"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, pin: generatePin(4) })}
-                      className="px-4 bg-blue-600 dark:bg-blue-700 text-white rounded-xl font-bold hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors text-sm"
-                    >
-                      Generate
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-2 text-center italic">PIN will be hashed and hidden after save.</p>
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 rounded-2xl p-4 mt-2">
+                <label className="text-xs font-bold text-blue-700 dark:text-blue-400 block mb-2 text-center uppercase">
+                  {editingId ? "Reset Security PIN (Optional)" : "Security Credential"}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    readOnly
+                    className="flex-1 px-4 py-3 bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-800/50 rounded-xl font-mono text-center tracking-[0.5em] text-lg font-bold dark:text-white placeholder:tracking-normal"
+                    value={formData.pin}
+                    placeholder={editingId ? "Leave blank to keep current PIN" : "----"}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, pin: generatePin(4) })}
+                    className="px-4 bg-blue-600 dark:bg-blue-700 text-white rounded-xl font-bold hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors text-sm"
+                  >
+                    Generate
+                  </button>
                 </div>
-              )}
+                <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-2 text-center italic">PIN will be hashed and hidden after save.</p>
+              </div>
 
               <button
                 disabled={adding}
