@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
 // Initialize socket outside component to avoid reconnects, 
 // but we will connect/disconnect based on auth state in a hook if needed.
@@ -26,17 +26,20 @@ export function useApi<T>(endpoint: string, options: RequestInit = {}, dependenc
     let isMounted = true;
     
     const fetchData = async () => {
-      if (!user?.token) return;
-      
       setLoading(true);
       try {
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        };
+
+        if (user?.token) {
+          (headers as any)['Authorization'] = `Bearer ${user.token}`;
+        }
+
         const response = await fetch(`${API_URL}${endpoint}`, {
           ...options,
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${user.token}`,
-            ...options.headers,
-          },
+          headers,
         });
         
         if (!response.ok) {

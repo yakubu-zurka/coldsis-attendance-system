@@ -3,16 +3,23 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 export function exportToCSV(records: any[]) {
-  const headers = ['Staff Name', 'Date', 'Time', 'Latitude', 'Longitude', 'Accuracy (m)', 'Timestamp'];
-  const rows = records.map(r => [
-    r.staffName,
-    r.checkInDate || r.date,
-    r.checkInTime,
-    r.latitude?.toFixed(6) || "N/A",
-    r.longitude?.toFixed(6) || "N/A",
-    r.accuracy || "N/A",
-    new Date(r.timestamp || r.checkInTimestamp || Date.now()).toISOString(),
-  ]);
+  const headers = ['Staff Name', 'Date', 'Check In Time', 'Check Out Time', 'Duration', 'Latitude', 'Longitude', 'Accuracy (m)'];
+  const rows = records.map(r => {
+    const checkInTime = r.checkIn?.time || r.checkInTime || "--:--";
+    const checkOutTime = r.checkOut?.time || r.checkOutTime || "Not Recorded";
+    const duration = r.checkOut?.time ? calculateDurationInSecs(r.checkIn?.timestamp, r.checkOut?.timestamp) : "On Duty";
+    
+    return [
+      r.staffName || "Unknown",
+      r.date || r.checkInDate || "N/A",
+      checkInTime,
+      checkOutTime,
+      duration,
+      r.checkIn?.latitude?.toFixed(6) || r.latitude?.toFixed(6) || "N/A",
+      r.checkIn?.longitude?.toFixed(6) || r.longitude?.toFixed(6) || "N/A",
+      r.checkIn?.accuracy || r.accuracy || "N/A"
+    ];
+  });
 
   const csv = [
     headers.join(','),
@@ -26,8 +33,18 @@ export function exportToCSV(records: any[]) {
   link.click();
 }
 
+function calculateDurationInSecs(inTime?: number, outTime?: number) {
+  if (!inTime || !outTime) return "N/A";
+  const diff = outTime - inTime;
+  if (diff < 0) return "0h 0m";
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  if (hours >= 14) return "14h 0m (Max)";
+  return `${hours}h ${minutes}m`;
+}
+
 export function exportToExcel(records: any[]) {
-  const headers = ['Staff Name', 'Date', 'Time', 'Latitude', 'Longitude', 'Accuracy (m)', 'Timestamp'];
+  const headers = ['Staff Name', 'Date', 'Check In Time', 'Check Out Time', 'Duration', 'Latitude', 'Longitude', 'Accuracy (m)'];
 
   let html = '<table border="1"><tr>';
   headers.forEach(header => {
@@ -36,14 +53,19 @@ export function exportToExcel(records: any[]) {
   html += '</tr>';
 
   records.forEach(r => {
+    const checkInTime = r.checkIn?.time || r.checkInTime || "--:--";
+    const checkOutTime = r.checkOut?.time || r.checkOutTime || "Not Recorded";
+    const duration = r.checkOut?.time ? calculateDurationInSecs(r.checkIn?.timestamp, r.checkOut?.timestamp) : "On Duty";
+
     html += '<tr>';
-    html += `<td>${r.staffName}</td>`;
-    html += `<td>${r.checkInDate || r.date}</td>`;
-    html += `<td>${r.checkInTime}</td>`;
-    html += `<td>${r.latitude?.toFixed(6) || "N/A"}</td>`;
-    html += `<td>${r.longitude?.toFixed(6) || "N/A"}</td>`;
-    html += `<td>${r.accuracy || "N/A"}</td>`;
-    html += `<td>${new Date(r.timestamp || r.checkInTimestamp || Date.now()).toISOString()}</td>`;
+    html += `<td>${r.staffName || "Unknown"}</td>`;
+    html += `<td>${r.date || r.checkInDate || "N/A"}</td>`;
+    html += `<td>${checkInTime}</td>`;
+    html += `<td>${checkOutTime}</td>`;
+    html += `<td>${duration}</td>`;
+    html += `<td>${r.checkIn?.latitude?.toFixed(6) || r.latitude?.toFixed(6) || "N/A"}</td>`;
+    html += `<td>${r.checkIn?.longitude?.toFixed(6) || r.longitude?.toFixed(6) || "N/A"}</td>`;
+    html += `<td>${r.checkIn?.accuracy || r.accuracy || "N/A"}</td>`;
     html += '</tr>';
   });
   html += '</table>';
@@ -95,14 +117,16 @@ export function exportToPDF(records: any[]) {
   };
 
   const tableRows = records.map(record => {
-    const isCompleted = !!record.checkOutTime;
-    const duration = isCompleted ? calculateDuration(record.checkInTimestamp, record.checkOutTimestamp) : "On Duty";
+    const checkInTime = record.checkIn?.time || record.checkInTime || "--:--";
+    const checkOutTime = record.checkOut?.time || record.checkOutTime || "Not Recorded";
+    const isCompleted = !!record.checkOut?.time || !!record.checkOutTime;
+    const duration = isCompleted ? calculateDuration(record.checkIn?.timestamp || record.checkInTimestamp, record.checkOut?.timestamp || record.checkOutTimestamp) : "On Duty";
     
     return [
       record.staffName || "Unknown",
       record.date || record.checkInDate || "N/A",
-      record.checkInTime || "--:--",
-      record.checkOutTime || "Not Recorded",
+      checkInTime,
+      checkOutTime,
       duration
     ];
   });

@@ -1,9 +1,21 @@
 services:
+  # Backend Web Service
   - type: web
-    name: staff-attendance-app
+    name: coldsis-backend
     runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+  # Frontend Static Site
+  - type: web
+    name: coldsis-frontend
+    runtime: static
     buildCommand: npm install && npm run build
-    startCommand: npm run preview
+    staticPublishDir: dist
     envVars:
       - key: NODE_ENV
         value: production

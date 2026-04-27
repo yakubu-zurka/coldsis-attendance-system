@@ -14,8 +14,6 @@ import {
   EyeOff,
   UserCheck,
   FileText,
-  Clock,
-  ArrowLeft,
   BadgeCheck
 } from "lucide-react";
 import { StaffMember } from "../types";
@@ -366,7 +364,7 @@ export function CheckIn() {
   };
 
   return (
-    <div className="relative min-h-screen bg-orange-600 flex items-center justify-center p-4 overflow-hidden">
+    <div className="relative min-h-screen bg-orange-600 flex items-center justify-center p-4 sm:p-6 md:p-8 overflow-hidden font-sans">
       <canvas
         ref={canvasRef}
         className="absolute inset-0 z-0 pointer-events-none block"
@@ -378,7 +376,7 @@ export function CheckIn() {
           <path d="M0,160L60,176C120,192,240,224,360,213.3C480,203,600,149,720,144C840,139,960,181,1080,197.3C1200,213,1320,203,1380,197.3L1440,192L1440,320L0,320Z" fill="white" />
         </svg>
       </div>
-      <div className="relative bg-white/10 backdrop-blur-xl border border-white/30 rounded-[2rem] sm:rounded-[2.5rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] p-6 sm:p-12 max-w-md w-[95%] sm:w-full z-10">
+      <div className="relative bg-white/10 backdrop-blur-xl border border-white/30 rounded-[2rem] sm:rounded-[3rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] p-5 sm:p-8 md:p-12 max-w-md w-full z-10 transition-all duration-500">
         <div className="flex justify-center mb-6 sm:mb-8">
           <img src="/coldsis-logo_FitMaxWzM1MiwyNjRd.png" alt="COLDSiS Logo" className="h-14 sm:h-20 drop-shadow-lg" />
         </div>
@@ -386,12 +384,12 @@ export function CheckIn() {
         {state === "success" && submittedData ? (
           <div className="text-center space-y-5 animate-in fade-in zoom-in duration-300">
             <CheckCircle className="w-24 h-24 text-green-400 mx-auto drop-shadow-[0_0_15px_rgba(74,222,128,0.5)]" />
-            <div>
-              <h2 className="font-black text-2xl sm:text-3xl text-white uppercase tracking-tighter">{submittedData.staffName}</h2>
-              <p className="text-orange-300 font-black text-xs sm:text-sm tracking-widest mt-1">{submittedData.staffId}</p>
+            <div className="space-y-1 sm:space-y-2">
+              <h2 className="font-black text-xl sm:text-2xl md:text-3xl text-white uppercase tracking-tighter leading-tight">{submittedData.staffName}</h2>
+              <p className="text-orange-300 font-black text-[10px] sm:text-xs md:text-sm tracking-widest uppercase">{submittedData.staffId}</p>
             </div>
-            <div className="bg-white/10 backdrop-blur-md py-4 sm:py-6 px-4 rounded-3xl border border-white/20 shadow-inner">
-              <p className="text-4xl sm:text-5xl font-black text-white tracking-tighter drop-shadow-md">{submittedData.timeString}</p>
+            <div className="bg-white/10 backdrop-blur-md py-4 sm:py-6 md:py-8 px-4 rounded-2xl sm:rounded-3xl border border-white/20 shadow-inner">
+              <p className="text-3xl sm:text-4xl md:text-5xl font-black text-white tracking-tighter drop-shadow-md">{submittedData.timeString}</p>
             </div>
             <div className="flex flex-col items-center gap-2">
               <p className="font-black uppercase tracking-[0.2em] text-[10px] py-3 px-6 rounded-full bg-green-500/20 text-green-300 border border-green-500/30 inline-block backdrop-blur-md shadow-lg">
@@ -416,7 +414,7 @@ export function CheckIn() {
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search Name or Staff ID..."
-                    className="w-full pl-12 pr-6 py-4 bg-white rounded-2xl focus:outline-none focus:ring-4 focus:ring-orange-400 transition-all font-bold text-slate-800 shadow-inner"
+                    className="w-full pl-10 sm:pl-12 pr-4 sm:pr-6 py-3 sm:py-4 bg-white rounded-xl sm:rounded-2xl focus:outline-none focus:ring-4 focus:ring-orange-400 transition-all font-bold text-sm sm:text-base text-slate-800 shadow-inner"
                   />
                 </div>
                 {search && (
@@ -488,7 +486,7 @@ export function CheckIn() {
                           handleActionRequest();
                         }}
                         disabled={state === "loading" || isShiftCompleted}
-                        className={`relative z-20 w-full py-4 sm:py-5 rounded-2xl font-black text-lg sm:text-xl uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-3 active:scale-95 cursor-pointer ${
+                        className={`relative z-20 w-full py-3.5 sm:py-4 md:py-5 rounded-xl sm:rounded-2xl font-black text-sm sm:text-lg md:text-xl uppercase tracking-wide sm:tracking-widest transition-all shadow-xl flex items-center justify-center gap-2 sm:gap-3 active:scale-95 cursor-pointer ${
                           isShiftCompleted
                             ? "bg-green-500/20 text-green-400 border border-green-500/30 cursor-not-allowed"
                             : isCheckedIn
@@ -518,7 +516,7 @@ export function CheckIn() {
                             console.log("Excuse Mode Activated");
                             setIsExcuseMode(true);
                           }}
-                          className="relative z-20 w-full py-3 rounded-2xl font-bold text-sm uppercase tracking-widest text-white/70 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center gap-2"
+                          className="relative z-20 w-full py-2.5 sm:py-3 rounded-2xl font-bold text-[10px] sm:text-sm uppercase tracking-wide sm:tracking-widest text-white/70 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center gap-2"
                         >
                           <FileText size={16} />
                           Report Absence / Excuse
@@ -544,7 +542,7 @@ export function CheckIn() {
                           value={pin}
                           onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
                           placeholder="CONFIRM PIN"
-                          className="w-full bg-white/20 border-2 border-white/30 rounded-2xl px-4 py-3 sm:px-6 sm:py-4 text-center text-xl sm:text-2xl font-black tracking-[0.5em] placeholder:tracking-normal placeholder:text-white/50 focus:outline-none focus:bg-white focus:text-slate-900 focus:border-white transition-all shadow-lg"
+                          className="w-full bg-white/20 border-2 border-white/30 rounded-xl sm:rounded-2xl px-4 py-3 sm:px-6 sm:py-4 text-center text-lg sm:text-xl md:text-2xl font-black tracking-[0.5em] placeholder:tracking-normal placeholder:text-white/50 focus:outline-none focus:bg-white focus:text-slate-900 focus:border-white transition-all shadow-lg"
                         />
                         <button
                           type="button"
@@ -562,7 +560,7 @@ export function CheckIn() {
                             console.log("Cancelling Excuse Mode");
                             setIsExcuseMode(false);
                           }}
-                          className="flex-1 py-3 sm:py-4 rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-widest bg-white/10 text-white hover:bg-white/20 transition-all cursor-pointer relative z-30"
+                          className="flex-1 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-wide sm:tracking-widest bg-white/10 text-white hover:bg-white/20 transition-all cursor-pointer relative z-30 shadow-md"
                         >
                           Cancel
                         </button>
@@ -573,9 +571,9 @@ export function CheckIn() {
                             handleExcuseRequest();
                           }}
                           disabled={state === "loading"}
-                          className="flex-[2] py-3 sm:py-4 rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-widest bg-white text-orange-600 hover:bg-orange-50 transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer relative z-30"
+                          className="flex-[2] py-3.5 sm:py-4 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-wide sm:tracking-widest bg-white text-orange-600 hover:bg-orange-50 transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer relative z-30"
                         >
-                          {state === "loading" ? <Loader2 className="animate-spin" /> : <>Submit Absence</>}
+                          {state === "loading" ? <Loader2 className="animate-spin" size={16} /> : <>Submit Absence</>}
                         </button>
                       </div>
                     </div>
