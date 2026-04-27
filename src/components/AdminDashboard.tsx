@@ -1,7 +1,7 @@
 import { useState, lazy, Suspense } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { LogOut, Menu, X, Users, BarChart3, FileText, Map as MapIcon, Loader2, Sun, Moon } from 'lucide-react';
+import { LogOut, Menu, X, Users, BarChart3, FileText, Map as MapIcon, Loader2, Sun, Moon, Settings as SettingsIcon } from 'lucide-react';
 import { SessionTimeout } from './admin/SessionTimeout';
 
 import { useSessionTimeout } from '../hooks/useSessionTimeout';
@@ -12,8 +12,9 @@ const AttendanceRecords = lazy(() => import('./admin/AttendanceRecords').then(m 
 const Analytics = lazy(() => import('./admin/Analytics').then(m => ({ default: m.Analytics })));
 const LiveMap = lazy(() => import('./admin/LiveMap').then(m => ({ default: m.LiveMap })));
 const Excuses = lazy(() => import('./admin/Excuses'));
+const AdminSettings = lazy(() => import('./admin/Settings').then(m => ({ default: m.Settings })));
 
-type TabType = 'staff' | 'attendance' | 'analytics' | 'map' | 'excuses';
+type TabType = 'staff' | 'attendance' | 'analytics' | 'map' | 'excuses' | 'settings';
 
 export function AdminDashboard() {
   const { logout } = useAuth();
@@ -30,6 +31,7 @@ export function AdminDashboard() {
     { id: 'map' as TabType, label: 'Live Map View', icon: MapIcon },
     { id: 'staff' as TabType, label: 'Staff Management', icon: Users },
     { id: 'analytics' as TabType, label: 'Analytics', icon: BarChart3 },
+    { id: 'settings' as TabType, label: 'Settings', icon: SettingsIcon },
   ];
 
   return (
@@ -142,6 +144,7 @@ export function AdminDashboard() {
               {activeTab === 'map' && <LiveMap />}
               {activeTab === 'staff' && <StaffManagement />}
               {activeTab === 'analytics' && <Analytics />}
+              {activeTab === 'settings' && <AdminSettings />}
             </Suspense>
           </div>
         </main>

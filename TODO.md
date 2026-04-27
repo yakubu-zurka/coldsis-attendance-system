@@ -1,12 +1,10 @@
-# Analytics Enhancement TODO
-
-## Task
-Add staff filtering functionality to Analytics component
-
-## Steps
-- [x] 1. Analyze current Analytics implementation
-- [ ] 2. Add staff filter dropdown to Analytics component
-- [ ] 3. Update statistics calculation based on selected staff
-- [ ] 4. Filter charts to show data for selected staff
-- [ ] 5. Test the implementation
+- [x] Add staff filtering functionality to Analytics component
+    - [x] Analyze current Analytics implementation
+    - [x] Add staff selection dropdown (combobox) to Analytics UI
+    - [x] Filter attendance trend and statistics by selected staff member
+    - [x] Adjust summary cards to reflect individual stats when a staff member is selected
+    - [x] Test the implementation
+- [x] Finalize export options (CSV, Excel, PDF) in Attendance Records
+- [x] Implement all-time analytics metrics for SRS compliance
+- [x] Ensure session timeout matches SRS (5m)
 

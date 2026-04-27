@@ -3,8 +3,8 @@ import toast from 'react-hot-toast';
 import { useApi, apiRequest, getSocket } from '../../hooks/useApi';
 import { useAuditLogger } from '../../hooks/useAuditLogger';
 import { useAuth } from '../../context/AuthContext';
-import { Trash2, Search, MapPin, Download, Loader2, Calendar, User, AlertTriangle } from 'lucide-react';
-import { exportToPDF } from '../../utils/export';
+import { Trash2, Search, MapPin, Loader2, Calendar, User, AlertTriangle } from 'lucide-react';
+import { exportToPDF, exportToCSV, exportToExcel } from '../../utils/export';
 
 export function AttendanceRecords() {
   const { user } = useAuth();
@@ -77,6 +77,19 @@ export function AttendanceRecords() {
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
     if (hours >= 14) return "14h 0m (Max)";
     return `${hours}h ${minutes}m`;
+  };
+
+  const handleExport = (type: 'csv' | 'excel' | 'pdf') => {
+    if (filteredRecords.length === 0) {
+      toast.error("No records to export");
+      return;
+    }
+    
+    if (type === 'csv') exportToCSV(filteredRecords);
+    else if (type === 'excel') exportToExcel(filteredRecords);
+    else exportToPDF(filteredRecords);
+    
+    logActivity('ATTENDANCE_EXPORTED', `Exported ${filteredRecords.length} records as ${type.toUpperCase()}`, user?.email || 'System');
   };
 
   const handleDeleteRecord = async (id: string) => {
@@ -186,12 +199,26 @@ export function AttendanceRecords() {
             <p className="text-sm text-gray-500 dark:text-slate-400">Track daily check-ins and work durations</p>
           </div>
           <div className="flex items-center gap-2">
-            <button 
-              onClick={() => exportToPDF(filteredRecords)} 
-              className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-slate-700 text-blue-700 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-slate-600 transition font-semibold text-sm border border-blue-100 dark:border-slate-600"
-            >
-              <Download size={18}/> PDF Report
-            </button>
+            <div className="flex bg-gray-100 dark:bg-slate-700 p-1 rounded-xl border border-gray-200 dark:border-slate-600">
+              <button 
+                onClick={() => handleExport('csv')} 
+                className="px-3 py-1.5 hover:bg-white dark:hover:bg-slate-600 rounded-lg transition font-bold text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1.5"
+              >
+                CSV
+              </button>
+              <button 
+                onClick={() => handleExport('excel')} 
+                className="px-3 py-1.5 hover:bg-white dark:hover:bg-slate-600 rounded-lg transition font-bold text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1.5"
+              >
+                Excel
+              </button>
+              <button 
+                onClick={() => handleExport('pdf')} 
+                className="px-3 py-1.5 bg-white dark:bg-slate-600 shadow-sm rounded-lg transition font-bold text-[10px] uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1.5"
+              >
+                PDF
+              </button>
+            </div>
             <button 
               onClick={handleDeleteAll} 
               disabled={filteredRecords.length === 0}

@@ -33,6 +33,7 @@ app.use(express.json());
 
 // Inject io into req for use in controllers
 app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
   req.io = io;
   next();
 });

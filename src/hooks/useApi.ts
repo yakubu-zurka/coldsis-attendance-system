@@ -78,13 +78,23 @@ export const apiRequest = async (endpoint: string, method: string = 'GET', body?
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
+  const fullUrl = `${API_URL}${endpoint}`;
+  console.log(`[API REQUEST] ${method} ${fullUrl}`);
+
+  const response = await fetch(fullUrl, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  const data = await response.json();
+  // Check if response is JSON
+  const contentType = response.headers.get('content-type');
+  let data;
+  if (contentType && contentType.includes('application/json')) {
+    data = await response.json();
+  } else {
+    data = { message: await response.text() };
+  }
 
   if (!response.ok) {
     throw new Error(data.message || `API Error: ${response.status}`);

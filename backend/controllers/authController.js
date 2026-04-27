@@ -171,11 +171,35 @@ const deleteStaff = async (req, res) => {
   }
 };
 
+// @desc    Update user password
+// @route   PUT /api/auth/profile/password
+// @access  Private
+const updatePassword = async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  try {
+    // req.user is populated by protect middleware (without password)
+    // We need to fetch the user with password to verify
+    const user = await User.findById(req.user._id);
+
+    if (user && (await user.matchPassword(currentPassword))) {
+      user.password = newPassword;
+      await user.save();
+      res.json({ message: 'Password updated successfully' });
+    } else {
+      res.status(401).json({ message: 'Invalid current password' });
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   authUser,
   getUserProfile,
   registerUser,
   getStaff,
   updateStaff,
-  deleteStaff
+  deleteStaff,
+  updatePassword
 };

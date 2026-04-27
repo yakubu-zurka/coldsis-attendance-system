@@ -3,6 +3,7 @@ export type AuditAction =
   | 'STAFF_UPDATED' 
   | 'STAFF_DELETED' 
   | 'ATTENDANCE_DELETED' 
+  | 'ATTENDANCE_EXPORTED' 
   | 'SESSION_AUTOCLOSED' 
   | 'LOGIN_SUCCESS' 
   | 'LOGIN_FAILED';
